@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Courses() {
@@ -24,27 +24,11 @@ export default function Courses() {
   async function loadData() {
     setLoading(true);
     try {
-      const [
-        { data: cList, error: cErr },
-        { data: dList, error: dErr }
-      ] = await Promise.all([
-        supabase
-          .from('course')
-          .select(`
-            course_id, course_code, course_name, credits, course_type, status,
-            department:dept_id (dept_code, dept_name)
-          `)
-          .order('course_code'),
-        supabase.from('department').select('dept_id, dept_code, dept_name').order('dept_id')
-      ]);
-
-      if (cErr) throw cErr;
-      if (dErr) throw dErr;
-
-      setCourses(cList || []);
-      setDepartments(dList || []);
-      if (dList && dList.length > 0) {
-        setFormData(prev => ({ ...prev, dept_id: dList[0].dept_id }));
+      const data = await api.getCourses();
+      setCourses(data.courses || []);
+      setDepartments(data.departments || []);
+      if (data.departments?.length > 0 && !formData.dept_id) {
+        setFormData(prev => ({ ...prev, dept_id: data.departments[0].dept_id }));
       }
     } catch (err) {
       setError(formatDbError(err));
@@ -58,22 +42,15 @@ export default function Courses() {
     setError(null);
     setSuccess(null);
     try {
-      const { data, error: insertErr } = await supabase
-        .from('course')
-        .insert([{
-          dept_id: Number(formData.dept_id),
-          course_code: formData.course_code.toUpperCase(),
-          course_name: formData.course_name,
-          credits: Number(formData.credits),
-          course_type: formData.course_type,
-          status: 'Active'
-        }])
-        .select()
-        .single();
+      const res = await api.createCourse({
+        dept_id: Number(formData.dept_id),
+        course_code: formData.course_code.toUpperCase(),
+        course_name: formData.course_name,
+        credits: Number(formData.credits),
+        course_type: formData.course_type
+      });
 
-      if (insertErr) throw insertErr;
-
-      setSuccess(`Course ${formData.course_code} created successfully!`);
+      setSuccess(res.message || `Course ${formData.course_code} created successfully!`);
       setShowModal(false);
       setFormData(prev => ({ ...prev, course_code: '', course_name: '' }));
       await loadData();
@@ -88,7 +65,7 @@ export default function Courses() {
         <div>
           <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Curriculum Courses Directory</h2>
           <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-            Catalogue of approved courses with academic credit weights and course types.
+            Catalogue of approved courses with academic credit weights stored in MySQL.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -117,7 +94,7 @@ export default function Courses() {
                 <tr key={c.course_id}>
                   <td><code>{c.course_code}</code></td>
                   <td style={{ fontWeight: '500' }}>{c.course_name}</td>
-                  <td><span className="badge badge-neutral">{c.department?.dept_code}</span></td>
+                  <td><span className="badge badge-neutral">{c.dept_code}</span></td>
                   <td><strong>{c.credits} Credits</strong></td>
                   <td>
                     <span className="badge badge-primary">{c.course_type}</span>

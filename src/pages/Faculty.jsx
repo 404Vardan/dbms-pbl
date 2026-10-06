@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Faculty() {
   const [faculty, setFaculty] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -15,25 +14,8 @@ export default function Faculty() {
   async function loadFaculty() {
     setLoading(true);
     try {
-      const [
-        { data: fList, error: fErr },
-        { data: dList, error: dErr }
-      ] = await Promise.all([
-        supabase
-          .from('faculty')
-          .select(`
-            faculty_id, employee_code, full_name, email, designation, status,
-            department:dept_id (dept_code, dept_name)
-          `)
-          .order('employee_code'),
-        supabase.from('department').select('*')
-      ]);
-
-      if (fErr) throw fErr;
-      if (dErr) throw dErr;
-
-      setFaculty(fList || []);
-      setDepartments(dList || []);
+      const data = await api.getFaculty();
+      setFaculty(data || []);
     } catch (err) {
       setError(formatDbError(err));
     } finally {
@@ -46,7 +28,7 @@ export default function Faculty() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Faculty Directory & Academic Staff</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Teaching staff profiles, employee codes, and department affiliations.
+          Teaching staff profiles, employee codes, and department affiliations stored in MySQL.
         </p>
       </div>
 
@@ -71,7 +53,7 @@ export default function Faculty() {
                   <td><code>{f.employee_code}</code></td>
                   <td style={{ fontWeight: '600' }}>{f.full_name}</td>
                   <td>{f.designation}</td>
-                  <td><span className="badge badge-neutral">{f.department?.dept_code}</span></td>
+                  <td><span className="badge badge-neutral">{f.dept_code}</span></td>
                   <td>{f.email}</td>
                   <td><span className="badge badge-success">{f.status}</span></td>
                 </tr>

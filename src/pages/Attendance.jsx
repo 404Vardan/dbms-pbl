@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Attendance() {
@@ -27,18 +27,9 @@ export default function Attendance() {
   async function loadSections() {
     setLoading(true);
     try {
-      const { data, error: secErr } = await supabase
-        .from('section')
-        .select(`
-          section_id, section_code, room_no,
-          course:course_id (course_code, course_name),
-          faculty:faculty_id (full_name)
-        `)
-        .order('section_id');
-
-      if (secErr) throw secErr;
+      const data = await api.getAttendanceSections();
       setSections(data || []);
-      if (data && data.length > 0) {
+      if (data?.length > 0 && !selectedSection) {
         setSelectedSection(data[0].section_id);
       }
     } catch (err) {
@@ -52,49 +43,20 @@ export default function Attendance() {
     setError(null);
     setSuccess(null);
     try {
-      // 1. Fetch section roster (active registrations)
-      const { data: regList, error: regErr } = await supabase
-        .from('registration')
-        .select(`
-          registration_id, student_id,
-          student:student_id (student_id, reg_no, full_name)
-        `)
-        .eq('section_id', selectedSection)
-        .eq('status', 'Registered')
-        .order('registration_id');
+      const res = await api.getAttendanceRoster(selectedSection, date);
+      setRoster(res.roster || []);
+      setSummaryList(res.summary || []);
 
-      if (regErr) throw regErr;
-      setRoster(regList || []);
+      const existingAtt = {};
+      (res.attendanceRecords || []).forEach(a => {
+        existingAtt[a.registration_id] = a.status;
+      });
 
-      // 2. Fetch attendance already marked for this date
-      const regIds = (regList || []).map(r => r.registration_id);
-      let existingAtt = {};
-      if (regIds.length > 0) {
-        const { data: attList } = await supabase
-          .from('attendance')
-          .select('registration_id, status')
-          .eq('attendance_date', date)
-          .in('registration_id', regIds);
-
-        (attList || []).forEach(a => {
-          existingAtt[a.registration_id] = a.status;
-        });
-      }
-
-      // Default status to Present if not marked
       const initialMap = {};
-      (regList || []).forEach(r => {
+      (res.roster || []).forEach(r => {
         initialMap[r.registration_id] = existingAtt[r.registration_id] || 'Present';
       });
       setAttendanceMap(initialMap);
-
-      // 3. Fetch attendance summary stats for this section
-      const { data: sumList } = await supabase
-        .from('v_attendance_summary')
-        .select('*')
-        .eq('section_id', selectedSection);
-
-      setSummaryList(sumList || []);
     } catch (err) {
       setError(formatDbError(err));
     }
@@ -115,30 +77,13 @@ export default function Attendance() {
         status: attendanceMap[regId]
       }));
 
-      // Try RPC first
-      const { error: rpcErr } = await supabase.rpc('save_attendance', {
-        p_section_id: Number(selectedSection),
-        p_date: date,
-        p_entries: entries
+      const res = await api.saveAttendance({
+        section_id: Number(selectedSection),
+        date,
+        entries
       });
 
-      if (rpcErr) {
-        console.warn('RPC save_attendance failed, upserting directly...', rpcErr);
-        // Direct upsert
-        const rowsToInsert = entries.map(e => ({
-          registration_id: e.registration_id,
-          attendance_date: date,
-          status: e.status
-        }));
-
-        const { error: upsertErr } = await supabase
-          .from('attendance')
-          .upsert(rowsToInsert, { onConflict: 'registration_id, attendance_date' });
-
-        if (upsertErr) throw upsertErr;
-      }
-
-      setSuccess(`Attendance for ${entries.length} students on ${date} saved successfully!`);
+      setSuccess(res.message || `Attendance for ${entries.length} students on ${date} saved successfully!`);
       await loadRosterAndAttendance();
     } catch (err) {
       setError(formatDbError(err));
@@ -152,14 +97,13 @@ export default function Attendance() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Faculty Attendance Register</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Mark, verify, and correct student daily attendance. Database validates date bounds and status constraints.
+          Mark, verify, and correct student daily attendance. MySQL validates date bounds and status constraints.
         </p>
       </div>
 
       {error && <div className="alert alert-danger"><span>⚠️</span> {error}</div>}
       {success && <div className="alert alert-success"><span>✅</span> {success}</div>}
 
-      {/* Control Bar */}
       <div className="card" style={{ marginBottom: '24px' }}>
         <div className="card-body" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="form-group" style={{ minWidth: '280px' }}>
@@ -171,7 +115,7 @@ export default function Attendance() {
             >
               {sections.map(s => (
                 <option key={s.section_id} value={s.section_id}>
-                  {s.course?.course_code} - Sec {s.section_code} ({s.faculty?.full_name})
+                  {s.course_code} - Sec {s.section_code} ({s.faculty_name})
                 </option>
               ))}
             </select>
@@ -194,13 +138,12 @@ export default function Attendance() {
             disabled={saving || roster.length === 0}
             style={{ height: '38px' }}
           >
-            {saving ? 'Persisting to DB...' : '💾 Save Attendance'}
+            {saving ? 'Persisting to MySQL...' : '💾 Save Attendance'}
           </button>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '24px' }}>
-        {/* Roster Attendance Sheet */}
         <div className="card">
           <div className="card-header">
             <h3>Daily Session Register ({date})</h3>
@@ -225,8 +168,8 @@ export default function Attendance() {
                 ) : (
                   roster.map(r => (
                     <tr key={r.registration_id}>
-                      <td><code>{r.student?.reg_no}</code></td>
-                      <td style={{ fontWeight: '500' }}>{r.student?.full_name}</td>
+                      <td><code>{r.reg_no}</code></td>
+                      <td style={{ fontWeight: '500' }}>{r.full_name}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'inline-flex', gap: '6px' }}>
                           {['Present', 'Absent', 'Late'].map(status => (
@@ -261,7 +204,6 @@ export default function Attendance() {
           </div>
         </div>
 
-        {/* Section Cumulative Percentage & Shortage Tracker */}
         <div className="card">
           <div className="card-header">
             <h3>Cumulative Attendance & Shortage Flag (&lt;75%)</h3>

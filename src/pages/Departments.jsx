@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Departments() {
@@ -15,25 +15,9 @@ export default function Departments() {
   async function loadData() {
     setLoading(true);
     try {
-      const [
-        { data: dList, error: dErr },
-        { data: pList, error: pErr }
-      ] = await Promise.all([
-        supabase.from('department').select('*').order('dept_id'),
-        supabase
-          .from('programme')
-          .select(`
-            programme_id, programme_code, programme_name, duration_years, status,
-            department:dept_id (dept_code, dept_name)
-          `)
-          .order('programme_id')
-      ]);
-
-      if (dErr) throw dErr;
-      if (pErr) throw pErr;
-
-      setDepartments(dList || []);
-      setProgrammes(pList || []);
+      const data = await api.getDepartments();
+      setDepartments(data.departments || []);
+      setProgrammes(data.programmes || []);
     } catch (err) {
       setError(formatDbError(err));
     } finally {
@@ -46,14 +30,13 @@ export default function Departments() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Departments & Degree Programmes</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Organizational structure defining academic schools, departments, and certified degree curriculums.
+          Organizational structure defining academic departments and degree curriculums stored in MySQL.
         </p>
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', marginBottom: '24px' }}>
-        {/* Departments Panel */}
         <div className="card">
           <div className="card-header">
             <h3>Academic Departments</h3>
@@ -81,7 +64,6 @@ export default function Departments() {
           </div>
         </div>
 
-        {/* Programmes Panel */}
         <div className="card">
           <div className="card-header">
             <h3>Degree Programmes</h3>
@@ -103,7 +85,7 @@ export default function Departments() {
                   <tr key={p.programme_id}>
                     <td><code>{p.programme_code}</code></td>
                     <td style={{ fontWeight: '500' }}>{p.programme_name}</td>
-                    <td><span className="badge badge-neutral">{p.department?.dept_code}</span></td>
+                    <td><span className="badge badge-neutral">{p.dept_code}</span></td>
                     <td>{p.duration_years} Years</td>
                     <td>
                       <span className={`badge ${p.status === 'Active' ? 'badge-success' : 'badge-warning'}`}>

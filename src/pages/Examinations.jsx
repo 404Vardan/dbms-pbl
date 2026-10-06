@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Examinations() {
@@ -10,7 +10,6 @@ export default function Examinations() {
   const [examDate, setExamDate] = useState(new Date().toISOString().split('T')[0]);
   const [examRecords, setExamRecords] = useState([]);
   
-  // Marks Entry Form
   const [selectedReg, setSelectedReg] = useState('');
   const [marks, setMarks] = useState('');
   const [maxMarks, setMaxMarks] = useState(100);
@@ -33,18 +32,9 @@ export default function Examinations() {
   async function loadSections() {
     setLoading(true);
     try {
-      const { data, error: secErr } = await supabase
-        .from('section')
-        .select(`
-          section_id, section_code,
-          course:course_id (course_code, course_name),
-          faculty:faculty_id (full_name)
-        `)
-        .order('section_id');
-
-      if (secErr) throw secErr;
+      const data = await api.getAttendanceSections();
       setSections(data || []);
-      if (data && data.length > 0) {
+      if (data?.length > 0 && !selectedSection) {
         setSelectedSection(data[0].section_id);
       }
     } catch (err) {
@@ -56,34 +46,11 @@ export default function Examinations() {
 
   async function loadSectionData() {
     try {
-      const [
-        { data: stList, error: stErr },
-        { data: recs, error: recErr }
-      ] = await Promise.all([
-        supabase
-          .from('registration')
-          .select(`
-            registration_id,
-            student:student_id (student_id, reg_no, full_name)
-          `)
-          .eq('section_id', selectedSection)
-          .eq('status', 'Registered')
-          .order('registration_id'),
-        supabase
-          .from('v_exam_details')
-          .select('*')
-          .eq('section_id', selectedSection)
-          .eq('exam_type', examType)
-          .order('reg_no')
-      ]);
-
-      if (stErr) throw stErr;
-      if (recErr) throw recErr;
-
-      setStudents(stList || []);
-      setExamRecords(recs || []);
-      if (stList && stList.length > 0 && !selectedReg) {
-        setSelectedReg(stList[0].registration_id);
+      const res = await api.getExamData(selectedSection, examType);
+      setStudents(res.students || []);
+      setExamRecords(res.records || []);
+      if (res.students?.length > 0 && !selectedReg) {
+        setSelectedReg(res.students[0].registration_id);
       }
     } catch (err) {
       setError(formatDbError(err));
@@ -100,35 +67,18 @@ export default function Examinations() {
       const numMarks = Number(marks);
       const numMax = Number(maxMarks);
 
-      // Try RPC first
-      const { data: res, error: rpcErr } = await supabase.rpc('record_exam_result', {
-        p_registration_id: Number(selectedReg),
-        p_exam_type: examType,
-        p_exam_date: examDate,
-        p_marks: numMarks,
-        p_max_marks: numMax
+      const res = await api.recordExamMarks({
+        registration_id: Number(selectedReg),
+        exam_type: examType,
+        exam_date: examDate,
+        marks: numMarks,
+        max_marks: numMax
       });
 
-      if (rpcErr) {
-        console.warn('RPC record_exam_result failed, upserting directly...', rpcErr);
-        const { error: upsertErr } = await supabase
-          .from('examination')
-          .upsert([{
-            registration_id: Number(selectedReg),
-            exam_type: examType,
-            exam_date: examDate,
-            max_marks: numMax,
-            marks: numMarks
-          }], { onConflict: 'registration_id, exam_type' });
-
-        if (upsertErr) throw upsertErr;
-      }
-
-      setSuccess(`Marks recorded successfully! Deterministic grade computed.`);
+      setSuccess(res.message || 'Marks recorded successfully! Deterministic grade computed by MySQL trigger.');
       setMarks('');
       await loadSectionData();
     } catch (err) {
-      console.error('Marks rejected by DB:', err);
       setError(formatDbError(err));
     } finally {
       setSubmitting(false);
@@ -140,7 +90,7 @@ export default function Examinations() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Examinations & Grade Computation</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Evaluate marks with PostgreSQL validation. Grades and points are generated automatically by database triggers.
+          Evaluate marks with MySQL constraint validation. Grades and points are generated automatically by database triggers.
         </p>
       </div>
 
@@ -148,10 +98,9 @@ export default function Examinations() {
       {success && <div className="alert alert-success"><span>✅</span> {success}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', marginBottom: '28px' }}>
-        {/* Entry Panel */}
         <div className="card">
           <div className="card-header">
-            <h3>Record / Update Examination Marks</h3>
+            <h3>Record / Update Marks (Stored Procedure)</h3>
           </div>
           <form onSubmit={handleRecordMarks} className="card-body">
             <div className="form-group" style={{ marginBottom: '14px' }}>
@@ -163,7 +112,7 @@ export default function Examinations() {
               >
                 {sections.map(s => (
                   <option key={s.section_id} value={s.section_id}>
-                    {s.course?.course_code} - Sec {s.section_code} ({s.faculty?.full_name})
+                    {s.course_code} - Sec {s.section_code} ({s.faculty_name})
                   </option>
                 ))}
               </select>
@@ -193,7 +142,7 @@ export default function Examinations() {
               >
                 {students.map(s => (
                   <option key={s.registration_id} value={s.registration_id}>
-                    {s.student?.full_name} ({s.student?.reg_no})
+                    {s.full_name} ({s.reg_no})
                   </option>
                 ))}
               </select>
@@ -242,19 +191,18 @@ export default function Examinations() {
               style={{ width: '100%', padding: '10px' }}
               disabled={submitting || students.length === 0}
             >
-              {submitting ? 'Calculating via PostgreSQL...' : 'Submit & Calculate Grade'}
+              {submitting ? 'Calculating via MySQL...' : 'Submit & Calculate Grade'}
             </button>
           </form>
         </div>
 
-        {/* Grading Scale Documentation */}
         <div className="card">
           <div className="card-header">
             <h3>Deterministic University Grading Standard</h3>
           </div>
           <div className="card-body">
             <p style={{ fontSize: '0.825rem', color: '#64748b', marginBottom: '12px' }}>
-              Grades and points are mapped automatically by database trigger <code>trg_examination_grade</code>:
+              Grades and points are mapped automatically by MySQL trigger <code>trg_examination_after_insert</code>:
             </p>
             <table className="data-table" style={{ fontSize: '0.8rem' }}>
               <thead>
@@ -279,7 +227,6 @@ export default function Examinations() {
         </div>
       </div>
 
-      {/* Roster Examination Marks & Triggered Grades */}
       <div className="card">
         <div className="card-header">
           <h3>Evaluated Candidate Results ({examType})</h3>
@@ -311,7 +258,7 @@ export default function Examinations() {
                   <tr key={r.exam_id}>
                     <td><code>{r.reg_no}</code></td>
                     <td style={{ fontWeight: '500' }}>{r.student_name}</td>
-                    <td>{r.exam_date}</td>
+                    <td>{r.exam_date?.split('T')[0] || r.exam_date}</td>
                     <td style={{ fontWeight: '600' }}>
                       {r.marks != null ? `${r.marks} / ${r.max_marks}` : '—'}
                     </td>

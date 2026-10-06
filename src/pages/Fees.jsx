@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Fees() {
@@ -8,7 +8,6 @@ export default function Fees() {
   const [semesters, setSemesters] = useState([]);
   const [payments, setPayments] = useState([]);
   
-  // New Bill Form
   const [newBill, setNewBill] = useState({
     student_id: '',
     semester_id: '',
@@ -16,7 +15,6 @@ export default function Fees() {
     due_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
   });
 
-  // Record Payment Modal
   const [paymentModal, setPaymentModal] = useState({
     open: false,
     bill: null,
@@ -37,43 +35,17 @@ export default function Fees() {
   async function loadData() {
     setLoading(true);
     try {
-      const [
-        { data: fbList, error: fbErr },
-        { data: stList, error: stErr },
-        { data: smList, error: smErr },
-        { data: pyList, error: pyErr }
-      ] = await Promise.all([
-        supabase.from('v_fee_dues').select('*').order('bill_id', { ascending: false }),
-        supabase.from('student').select('student_id, reg_no, full_name').eq('status', 'Active').order('full_name'),
-        supabase.from('semester').select('semester_id, academic_year, term').order('start_date', { ascending: false }),
-        supabase
-          .from('payment')
-          .select(`
-            payment_id, payment_date, amount_paid, payment_mode, reference_no,
-            fee_bill:bill_id (
-              bill_id,
-              student:student_id (full_name, reg_no)
-            )
-          `)
-          .order('payment_id', { ascending: false })
-          .limit(15)
-      ]);
+      const data = await api.getFeesData();
+      setBills(data.bills || []);
+      setStudents(data.students || []);
+      setSemesters(data.semesters || []);
+      setPayments(data.payments || []);
 
-      if (fbErr) throw fbErr;
-      if (stErr) throw stErr;
-      if (smErr) throw smErr;
-      if (pyErr) throw pyErr;
-
-      setBills(fbList || []);
-      setStudents(stList || []);
-      setSemesters(smList || []);
-      setPayments(pyList || []);
-
-      if (stList && stList.length > 0 && !newBill.student_id) {
-        setNewBill(prev => ({ ...prev, student_id: stList[0].student_id }));
+      if (data.students?.length > 0 && !newBill.student_id) {
+        setNewBill(prev => ({ ...prev, student_id: data.students[0].student_id }));
       }
-      if (smList && smList.length > 0 && !newBill.semester_id) {
-        setNewBill(prev => ({ ...prev, semester_id: smList[0].semester_id }));
+      if (data.semesters?.length > 0 && !newBill.semester_id) {
+        setNewBill(prev => ({ ...prev, semester_id: data.semesters[0].semester_id }));
       }
     } catch (err) {
       setError(formatDbError(err));
@@ -89,25 +61,17 @@ export default function Fees() {
     setSuccess(null);
 
     try {
-      const { data, error: billErr } = await supabase
-        .from('fee_bill')
-        .insert([{
-          student_id: Number(newBill.student_id),
-          semester_id: Number(newBill.semester_id),
-          amount_due: Number(newBill.amount_due),
-          due_date: newBill.due_date,
-          status: 'Unpaid'
-        }])
-        .select()
-        .single();
+      const res = await api.createBill({
+        student_id: Number(newBill.student_id),
+        semester_id: Number(newBill.semester_id),
+        amount_due: Number(newBill.amount_due),
+        due_date: newBill.due_date
+      });
 
-      if (billErr) throw billErr;
-
-      setSuccess('Fee bill generated successfully!');
+      setSuccess(res.message || 'Fee bill generated successfully!');
       setNewBill(prev => ({ ...prev, amount_due: '' }));
       await loadData();
     } catch (err) {
-      console.error(err);
       setError(formatDbError(err));
     } finally {
       setSubmitting(false);
@@ -123,24 +87,17 @@ export default function Fees() {
     setSuccess(null);
 
     try {
-      const { data, error: pyErr } = await supabase
-        .from('payment')
-        .insert([{
-          bill_id: paymentModal.bill.bill_id,
-          amount_paid: Number(paymentModal.amount),
-          payment_mode: paymentModal.mode,
-          reference_no: paymentModal.ref || `TXN${Date.now()}`
-        }])
-        .select()
-        .single();
+      const res = await api.recordPayment({
+        bill_id: paymentModal.bill.bill_id,
+        amount_paid: Number(paymentModal.amount),
+        payment_mode: paymentModal.mode,
+        reference_no: paymentModal.ref || `TXN${Date.now()}`
+      });
 
-      if (pyErr) throw pyErr;
-
-      setSuccess(`Payment of ₹${paymentModal.amount} recorded! Bill status updated.`);
+      setSuccess(res.message || `Payment of ₹${paymentModal.amount} recorded! Bill status updated.`);
       setPaymentModal({ open: false, bill: null, amount: '', mode: 'UPI', ref: '' });
       await loadData();
     } catch (err) {
-      console.error('Payment rejected by database:', err);
       setError(formatDbError(err));
     } finally {
       setSubmitting(false);
@@ -152,7 +109,7 @@ export default function Fees() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Student Accounts, Invoicing & Receipts</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Manage fee billing and payments with strict PostgreSQL overpayment rejection and automated status derivation.
+          Manage fee billing and payments with strict MySQL overpayment rejection and automated status derivation.
         </p>
       </div>
 
@@ -160,7 +117,6 @@ export default function Fees() {
       {success && <div className="alert alert-success"><span>✅</span> {success}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', marginBottom: '28px' }}>
-        {/* Create Bill Card */}
         <div className="card">
           <div className="card-header">
             <h3>Generate Semester Fee Bill</h3>
@@ -233,7 +189,6 @@ export default function Fees() {
           </form>
         </div>
 
-        {/* Recent Transactions Feed */}
         <div className="card">
           <div className="card-header">
             <h3>Recent Receipt Transactions</h3>
@@ -253,8 +208,8 @@ export default function Fees() {
                 {payments.map(p => (
                   <tr key={p.payment_id}>
                     <td><code>{p.reference_no}</code></td>
-                    <td style={{ fontSize: '0.8rem' }}>{p.fee_bill?.student?.full_name}</td>
-                    <td>{p.payment_date}</td>
+                    <td style={{ fontSize: '0.8rem' }}>{p.student_name}</td>
+                    <td>{p.payment_date?.split('T')[0] || p.payment_date}</td>
                     <td style={{ fontWeight: '600', color: '#15803d' }}>
                       ₹{Number(p.amount_paid).toLocaleString('en-IN')}
                     </td>
@@ -267,10 +222,9 @@ export default function Fees() {
         </div>
       </div>
 
-      {/* Outstanding Bills Table */}
       <div className="card">
         <div className="card-header">
-          <h3>Semester Fee Invoices & Recovery Status</h3>
+          <h3>Semester Fee Invoices & Recovery Status (MySQL View)</h3>
           <span className="badge badge-neutral">{bills.length} Bills Total</span>
         </div>
         <div className="table-responsive">
@@ -296,7 +250,7 @@ export default function Fees() {
                   <td style={{ fontWeight: '500' }}>{b.student_name}</td>
                   <td><code>{b.reg_no}</code></td>
                   <td>{b.semester_label}</td>
-                  <td>{b.due_date}</td>
+                  <td>{b.due_date?.split('T')[0] || b.due_date}</td>
                   <td>₹{Number(b.amount_due).toLocaleString('en-IN')}</td>
                   <td style={{ color: '#15803d', fontWeight: '500' }}>
                     ₹{Number(b.amount_paid).toLocaleString('en-IN')}
@@ -340,7 +294,6 @@ export default function Fees() {
         </div>
       </div>
 
-      {/* Record Payment Modal */}
       {paymentModal.open && (
         <div className="modal-backdrop">
           <div className="modal-content" style={{ maxWidth: '440px' }}>
@@ -371,7 +324,7 @@ export default function Fees() {
                   required
                 />
                 <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                  Overpayment test: Entering an amount higher than ₹{paymentModal.bill?.balance} will be blocked by PostgreSQL.
+                  Overpayment test: Entering an amount higher than ₹{paymentModal.bill?.balance} will be rejected by MySQL trigger.
                 </span>
               </div>
 
@@ -416,7 +369,7 @@ export default function Fees() {
                   className="btn btn-primary"
                   disabled={submitting}
                 >
-                  {submitting ? 'Verifying with DB...' : 'Confirm Receipt'}
+                  {submitting ? 'Verifying with MySQL...' : 'Confirm Receipt'}
                 </button>
               </div>
             </form>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Semesters() {
@@ -14,12 +14,7 @@ export default function Semesters() {
   async function loadSemesters() {
     setLoading(true);
     try {
-      const { data, error: err } = await supabase
-        .from('semester')
-        .select('*')
-        .order('start_date', { ascending: false });
-
-      if (err) throw err;
+      const data = await api.getSemesters();
       setSemesters(data || []);
     } catch (err) {
       setError(formatDbError(err));
@@ -33,7 +28,7 @@ export default function Semesters() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Academic Calendar & Semesters</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Schedule of academic terms, semester start and end dates with date-integrity validation.
+          Schedule of academic terms, semester start and end dates stored in MySQL.
         </p>
       </div>
 
@@ -60,8 +55,8 @@ export default function Semesters() {
                     <td>#{s.semester_id}</td>
                     <td style={{ fontWeight: '600' }}>{s.academic_year}</td>
                     <td><span className="badge badge-neutral">{s.term} Term</span></td>
-                    <td>{s.start_date}</td>
-                    <td>{s.end_date}</td>
+                    <td>{s.start_date?.split('T')[0] || s.start_date}</td>
+                    <td>{s.end_date?.split('T')[0] || s.end_date}</td>
                     <td>
                       {isCurrent ? (
                         <span className="badge badge-success">Current Active Term</span>

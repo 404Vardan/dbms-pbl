@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Sections() {
@@ -27,31 +27,15 @@ export default function Sections() {
   async function loadData() {
     setLoading(true);
     try {
-      const [
-        { data: secList, error: sErr },
-        { data: cList, error: cErr },
-        { data: fList, error: fErr },
-        { data: smList, error: smErr }
-      ] = await Promise.all([
-        supabase.from('v_section_occupancy').select('*').order('course_code'),
-        supabase.from('course').select('course_id, course_code, course_name').eq('status', 'Active'),
-        supabase.from('faculty').select('faculty_id, full_name').eq('status', 'Active'),
-        supabase.from('semester').select('semester_id, academic_year, term').order('start_date', { ascending: false })
-      ]);
+      const data = await api.getSections();
+      setSections(data.sections || []);
+      setCourses(data.courses || []);
+      setFaculty(data.faculty || []);
+      setSemesters(data.semesters || []);
 
-      if (sErr) throw sErr;
-      if (cErr) throw cErr;
-      if (fErr) throw fErr;
-      if (smErr) throw smErr;
-
-      setSections(secList || []);
-      setCourses(cList || []);
-      setFaculty(fList || []);
-      setSemesters(smList || []);
-
-      if (cList && cList.length > 0) setFormData(p => ({ ...p, course_id: cList[0].course_id }));
-      if (fList && fList.length > 0) setFormData(p => ({ ...p, faculty_id: fList[0].faculty_id }));
-      if (smList && smList.length > 0) setFormData(p => ({ ...p, semester_id: smList[0].semester_id }));
+      if (data.courses?.length > 0 && !formData.course_id) setFormData(p => ({ ...p, course_id: data.courses[0].course_id }));
+      if (data.faculty?.length > 0 && !formData.faculty_id) setFormData(p => ({ ...p, faculty_id: data.faculty[0].faculty_id }));
+      if (data.semesters?.length > 0 && !formData.semester_id) setFormData(p => ({ ...p, semester_id: data.semesters[0].semester_id }));
     } catch (err) {
       setError(formatDbError(err));
     } finally {
@@ -64,22 +48,16 @@ export default function Sections() {
     setError(null);
     setSuccess(null);
     try {
-      const { data, error: insertErr } = await supabase
-        .from('section')
-        .insert([{
-          course_id: Number(formData.course_id),
-          faculty_id: Number(formData.faculty_id),
-          semester_id: Number(formData.semester_id),
-          section_code: formData.section_code.toUpperCase(),
-          room_no: formData.room_no,
-          capacity: Number(formData.capacity)
-        }])
-        .select()
-        .single();
+      const res = await api.createSection({
+        course_id: Number(formData.course_id),
+        faculty_id: Number(formData.faculty_id),
+        semester_id: Number(formData.semester_id),
+        section_code: formData.section_code.toUpperCase(),
+        room_no: formData.room_no,
+        capacity: Number(formData.capacity)
+      });
 
-      if (insertErr) throw insertErr;
-
-      setSuccess(`Section ${formData.section_code} created successfully!`);
+      setSuccess(res.message || `Section ${formData.section_code} created successfully!`);
       setShowModal(false);
       await loadData();
     } catch (err) {
@@ -93,7 +71,7 @@ export default function Sections() {
         <div>
           <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Class Sections & Room Allocation</h2>
           <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-            Lecture and laboratory section assignments with classroom capacities and faculty allocations.
+            Lecture and laboratory section assignments with classroom capacities stored in MySQL.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>

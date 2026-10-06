@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Registration() {
@@ -20,44 +20,18 @@ export default function Registration() {
   async function loadData() {
     setLoading(true);
     try {
-      const [
-        { data: stList, error: stErr },
-        { data: secList, error: secErr },
-        { data: regList, error: regErr }
-      ] = await Promise.all([
-        supabase.from('student').select('student_id, reg_no, full_name').eq('status', 'Active').order('full_name'),
-        supabase.from('v_section_occupancy').select('*').order('course_code'),
-        supabase
-          .from('registration')
-          .select(`
-            registration_id, registered_on, status,
-            student:student_id (student_id, reg_no, full_name),
-            section:section_id (
-              section_id, section_code, room_no,
-              course:course_id (course_code, course_name, credits),
-              semester:semester_id (academic_year, term)
-            )
-          `)
-          .order('registration_id', { ascending: false })
-          .limit(20)
-      ]);
+      const data = await api.getRegistrationOptions();
+      setStudents(data.students || []);
+      setSections(data.sections || []);
+      setRegistrations(data.registrations || []);
 
-      if (stErr) throw stErr;
-      if (secErr) throw secErr;
-      if (regErr) throw regErr;
-
-      setStudents(stList || []);
-      setSections(secList || []);
-      setRegistrations(regList || []);
-
-      if (stList && stList.length > 0 && !selectedStudent) {
-        setSelectedStudent(stList[0].student_id);
+      if (data.students?.length > 0 && !selectedStudent) {
+        setSelectedStudent(data.students[0].student_id);
       }
-      if (secList && secList.length > 0 && !selectedSection) {
-        setSelectedSection(secList[0].section_id);
+      if (data.sections?.length > 0 && !selectedSection) {
+        setSelectedSection(data.sections[0].section_id);
       }
     } catch (err) {
-      console.error(err);
       setError(formatDbError(err));
     } finally {
       setLoading(false);
@@ -73,22 +47,10 @@ export default function Registration() {
     setSuccess(null);
 
     try {
-      const { data, error: insertErr } = await supabase
-        .from('registration')
-        .insert([{
-          student_id: Number(selectedStudent),
-          section_id: Number(selectedSection),
-          status: 'Registered'
-        }])
-        .select()
-        .single();
-
-      if (insertErr) throw insertErr;
-
-      setSuccess('Course Section Registration confirmed by database!');
+      const res = await api.registerCourse(Number(selectedStudent), Number(selectedSection));
+      setSuccess(res.message || 'Course Section Registration confirmed by MySQL database!');
       await loadData();
     } catch (err) {
-      console.error('Registration rejected by database:', err);
       setError(formatDbError(err));
     } finally {
       setSubmitting(false);
@@ -102,7 +64,7 @@ export default function Registration() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Course Registration & Section Allocation</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Enrol students into lecture/lab sections with real-time database capacity and duplicate checks.
+          Enrol students into lecture/lab sections with real-time MySQL database capacity and duplicate checks.
         </p>
       </div>
 
@@ -110,10 +72,9 @@ export default function Registration() {
       {success && <div className="alert alert-success"><span>✅</span> {success}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '24px', marginBottom: '28px' }}>
-        {/* Registration Form */}
         <div className="card">
           <div className="card-header">
-            <h3>New Course Enrolment</h3>
+            <h3>New Course Enrolment (Trigger Validation)</h3>
           </div>
           <form onSubmit={handleRegister} className="card-body">
             <div className="form-group" style={{ marginBottom: '16px' }}>
@@ -175,15 +136,14 @@ export default function Registration() {
               style={{ width: '100%', padding: '10px' }}
               disabled={submitting}
             >
-              {submitting ? 'Verifying with PostgreSQL...' : 'Register Course Section'}
+              {submitting ? 'Verifying with MySQL Database...' : 'Register Course Section'}
             </button>
           </form>
         </div>
 
-        {/* Live Section Capacity Card */}
         <div className="card">
           <div className="card-header">
-            <h3>Active Section Occupancies (Live View)</h3>
+            <h3>Active Section Occupancies (MySQL View)</h3>
           </div>
           <div className="table-responsive" style={{ maxHeight: '350px', overflowY: 'auto' }}>
             <table className="data-table">
@@ -220,7 +180,6 @@ export default function Registration() {
         </div>
       </div>
 
-      {/* Recent Registrations Table */}
       <div className="card">
         <div className="card-header">
           <h3>Recent Registrations Log</h3>
@@ -249,11 +208,11 @@ export default function Registration() {
                 registrations.map((r) => (
                   <tr key={r.registration_id}>
                     <td>#{r.registration_id}</td>
-                    <td style={{ fontWeight: '500' }}>{r.student?.full_name}</td>
-                    <td><code>{r.student?.reg_no}</code></td>
-                    <td>{r.section?.course?.course_code} - {r.section?.course?.course_name}</td>
-                    <td>Sec {r.section?.section_code} ({r.section?.room_no})</td>
-                    <td>{new Date(r.registered_on).toLocaleDateString()}</td>
+                    <td style={{ fontWeight: '500' }}>{r.student_name}</td>
+                    <td><code>{r.reg_no}</code></td>
+                    <td>{r.course_code} - {r.course_name}</td>
+                    <td>Sec {r.section_code} ({r.room_no})</td>
+                    <td>{r.registered_on?.split('T')[0] || r.registered_on}</td>
                     <td>
                       <span className="badge badge-success">{r.status}</span>
                     </td>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 
 export default function Reports() {
@@ -16,32 +16,7 @@ export default function Reports() {
     setLoading(true);
     setError(null);
     try {
-      let query;
-      switch (tab) {
-        case 'occupancy':
-          query = supabase.from('v_section_occupancy').select('*').order('course_code');
-          break;
-        case 'attendance':
-          query = supabase.from('v_attendance_summary').select('*').order('attendance_pct', { ascending: true });
-          break;
-        case 'results':
-          query = supabase.from('v_result_analysis').select('*').order('course_code');
-          break;
-        case 'history':
-          query = supabase.from('v_student_academic_history').select('*').order('student_id');
-          break;
-        case 'dues':
-          query = supabase.from('v_student_dues').select('*').order('outstanding', { ascending: false });
-          break;
-        case 'departments':
-          query = supabase.from('v_department_summary').select('*').order('dept_code');
-          break;
-        default:
-          query = supabase.from('v_section_occupancy').select('*');
-      }
-
-      const { data: res, error: err } = await query;
-      if (err) throw err;
+      const res = await api.getReport(tab);
       setData(res || []);
     } catch (err) {
       setError(formatDbError(err));
@@ -55,13 +30,12 @@ export default function Reports() {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ fontSize: '1.35rem', fontWeight: '700' }}>Institutional SQL Analytical Reports</h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Server-side analytical views featuring multi-table joins, aggregate functions, and window metrics.
+          Real-time analytical views queried from MySQL featuring multi-table joins, aggregates, and calculations.
         </p>
       </div>
 
       {error && <div className="alert alert-danger"><span>⚠️</span> {error}</div>}
 
-      {/* Report Tabs */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #cbd5e1', marginBottom: '20px', flexWrap: 'wrap' }}>
         {[
           { id: 'occupancy', label: '1. Section Occupancy & Capacity' },
@@ -90,18 +64,17 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* Report View Panel */}
       <div className="card">
         <div className="card-header">
           <h3>
-            Query View: <code>v_{activeTab === 'departments' ? 'department_summary' : activeTab === 'results' ? 'result_analysis' : activeTab === 'history' ? 'student_academic_history' : activeTab === 'dues' ? 'student_dues' : activeTab === 'attendance' ? 'attendance_summary' : 'section_occupancy'}</code>
+            MySQL View: <code>v_{activeTab === 'departments' ? 'department_summary' : activeTab === 'results' ? 'result_analysis' : activeTab === 'history' ? 'student_academic_history' : activeTab === 'dues' ? 'student_dues' : activeTab === 'attendance' ? 'attendance_summary' : 'section_occupancy'}</code>
           </h3>
           <span className="badge badge-neutral">{data.length} Rows Computed</span>
         </div>
         <div className="table-responsive">
           {loading ? (
             <div style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
-              Executing SQL analytical view query on Supabase PostgreSQL...
+              Executing SQL analytical view query on MySQL server...
             </div>
           ) : (
             <table className="data-table">

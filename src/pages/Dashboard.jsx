@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 
@@ -17,61 +17,28 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      // First attempt: Call the dashboard_summary RPC function
-      const { data, error: rpcError } = await supabase.rpc('dashboard_summary');
-      
-      if (!rpcError && data) {
-        setStats(data);
-      } else {
-        // Fallback: Direct table queries if RPC isn't yet compiled or returns null
-        console.warn('RPC dashboard_summary not available, executing fallback live queries...', rpcError);
-        
-        const [
-          { count: totalStudents },
-          { count: activeProgs },
-          { count: activeSecs },
-          { count: totalRegs },
-          { data: feeBills }
-        ] = await Promise.all([
-          supabase.from('student').select('*', { count: 'exact', head: true }).eq('status', 'Active'),
-          supabase.from('programme').select('*', { count: 'exact', head: true }).eq('status', 'Active'),
-          supabase.from('section').select('*', { count: 'exact', head: true }),
-          supabase.from('registration').select('*', { count: 'exact', head: true }).eq('status', 'Registered'),
-          supabase.from('fee_bill').select('amount_due')
-        ]);
-
-        const totalDue = feeBills?.reduce((sum, b) => sum + Number(b.amount_due || 0), 0) || 0;
-
-        setStats({
-          total_students: totalStudents || 0,
-          active_programmes: activeProgs || 0,
-          active_sections: activeSecs || 0,
-          current_registrations: totalRegs || 0,
-          outstanding_fees: totalDue,
-          attendance_shortage: 4,
-          recent_payments: []
-        });
-      }
+      const data = await api.getDashboardStats();
+      setStats(data);
     } catch (err) {
       console.error('Failed to load dashboard statistics:', err);
-      setError('Could not fetch real-time database metrics.');
+      setError('Could not connect to MySQL backend server. Ensure server is running.');
     } finally {
       setLoading(false);
     }
   }
 
   if (loading) {
-    return <div style={{ padding: '20px', color: '#64748b' }}>Connecting to database and calculating live metrics...</div>;
+    return <div style={{ padding: '20px', color: '#64748b' }}>Connecting to MySQL database and calculating live metrics...</div>;
   }
 
   return (
     <div>
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: '#0f172a' }}>
-          Welcome back, {profile?.full_name || 'Academic Administrator'}
+          Welcome back, {profile?.fullName || 'Academic Administrator'}
         </h2>
         <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-          Live operational overview across all departments, registrations, and accounts.
+          Real-time operational metrics queried directly from MySQL <code>scms_db</code>.
         </p>
       </div>
 
@@ -122,9 +89,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Recent Payments & Upcoming Exams Grids */}
+      {/* Recent Payments & Navigation */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
-        {/* Recent Financial Transactions */}
         <div className="card">
           <div className="card-header">
             <h3>Recent Fee Receipts</h3>
@@ -147,7 +113,7 @@ export default function Dashboard() {
                     <tr key={idx}>
                       <td style={{ fontWeight: '500' }}>{p.student_name}</td>
                       <td><code>{p.reg_no}</code></td>
-                      <td>{p.payment_date}</td>
+                      <td>{p.payment_date?.split('T')[0] || p.payment_date}</td>
                       <td style={{ fontWeight: '600', color: '#15803d' }}>
                         ₹{Number(p.amount_paid).toLocaleString('en-IN')}
                       </td>
@@ -168,7 +134,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Quick Operational Navigation */}
         <div className="card">
           <div className="card-header">
             <h3>Core Administrative Actions</h3>

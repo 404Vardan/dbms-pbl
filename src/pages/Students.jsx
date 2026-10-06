@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { formatDbError } from '../lib/errors';
 import { Link } from 'react-router-dom';
 
@@ -13,7 +13,6 @@ export default function Students() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Form State
   const [formData, setFormData] = useState({
     programme_id: '',
     reg_no: '',
@@ -22,8 +21,6 @@ export default function Students() {
     email: '',
     phone: '',
     admission_date: new Date().toISOString().split('T')[0],
-    status: 'Active',
-    // Guardian details
     guardian_name: '',
     guardian_relation: 'Father',
     guardian_phone: '',
@@ -38,31 +35,17 @@ export default function Students() {
   async function loadData() {
     setLoading(true);
     try {
-      const [
-        { data: stList, error: stErr },
-        { data: progList, error: progErr }
-      ] = await Promise.all([
-        supabase
-          .from('student')
-          .select(`
-            student_id, reg_no, full_name, email, phone, admission_date, status,
-            programme:programme_id (programme_code, programme_name),
-            guardian (name, relation, phone)
-          `)
-          .order('student_id', { ascending: false }),
-        supabase.from('programme').select('programme_id, programme_code, programme_name').eq('status', 'Active')
+      const [stList, deptData] = await Promise.all([
+        api.getStudents(),
+        api.getDepartments()
       ]);
 
-      if (stErr) throw stErr;
-      if (progErr) throw progErr;
-
       setStudents(stList || []);
-      setProgrammes(progList || []);
-      if (progList && progList.length > 0) {
-        setFormData(prev => ({ ...prev, programme_id: progList[0].programme_id }));
+      setProgrammes(deptData.programmes || []);
+      if (deptData.programmes?.length > 0 && !formData.programme_id) {
+        setFormData(prev => ({ ...prev, programme_id: deptData.programmes[0].programme_id }));
       }
     } catch (err) {
-      console.error(err);
       setError(formatDbError(err));
     } finally {
       setLoading(false);
@@ -76,53 +59,28 @@ export default function Students() {
     setSuccess(null);
 
     try {
-      // Try the transactional RPC first
-      const studentPayload = {
-        programme_id: Number(formData.programme_id),
-        reg_no: formData.reg_no,
-        full_name: formData.full_name,
-        dob: formData.dob,
-        email: formData.email,
-        phone: formData.phone,
-        admission_date: formData.admission_date,
-        status: formData.status
+      const payload = {
+        student: {
+          programme_id: Number(formData.programme_id),
+          reg_no: formData.reg_no,
+          full_name: formData.full_name,
+          dob: formData.dob,
+          email: formData.email,
+          phone: formData.phone,
+          admission_date: formData.admission_date
+        },
+        guardian: formData.guardian_name ? {
+          name: formData.guardian_name,
+          relation: formData.guardian_relation,
+          phone: formData.guardian_phone,
+          email: formData.guardian_email || null,
+          address: formData.guardian_address || null
+        } : null
       };
 
-      const guardianPayload = formData.guardian_name ? {
-        name: formData.guardian_name,
-        relation: formData.guardian_relation,
-        phone: formData.guardian_phone,
-        email: formData.guardian_email || null,
-        address: formData.guardian_address || null
-      } : null;
-
-      const { data: newId, error: rpcErr } = await supabase.rpc('admit_student', {
-        p_student: studentPayload,
-        p_guardian: guardianPayload
-      });
-
-      if (rpcErr) {
-        // Fallback to direct table inserts if RPC isn't loaded
-        console.warn('RPC admit_student failed, using direct table insert...', rpcErr);
-        const { data: insertedStudent, error: insertErr } = await supabase
-          .from('student')
-          .insert([studentPayload])
-          .select()
-          .single();
-
-        if (insertErr) throw insertErr;
-
-        if (guardianPayload && insertedStudent) {
-          await supabase.from('guardian').insert([{
-            student_id: insertedStudent.student_id,
-            ...guardianPayload
-          }]);
-        }
-      }
-
-      setSuccess(`Student ${formData.full_name} (${formData.reg_no}) admitted successfully!`);
+      await api.admitStudent(payload);
+      setSuccess(`Student ${formData.full_name} (${formData.reg_no}) admitted successfully via MySQL transaction!`);
       setShowModal(false);
-      // Reset form
       setFormData(prev => ({
         ...prev,
         reg_no: '',
@@ -153,7 +111,7 @@ export default function Students() {
         <div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: '700' }}>Student Admissions & Records</h2>
           <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
-            Comprehensive directory of enrolled students and their guardians.
+            Comprehensive directory of admitted students and guardians stored in MySQL.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -192,7 +150,7 @@ export default function Students() {
               {loading ? (
                 <tr>
                   <td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
-                    Loading student directory from Supabase...
+                    Loading student records from MySQL...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
@@ -208,7 +166,7 @@ export default function Students() {
                     <td style={{ fontWeight: '600' }}>{s.full_name}</td>
                     <td>
                       <span className="badge badge-neutral">
-                        {s.programme?.programme_code || 'N/A'}
+                        {s.programme_code || 'N/A'}
                       </span>
                     </td>
                     <td>
@@ -216,18 +174,18 @@ export default function Students() {
                       <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{s.phone}</div>
                     </td>
                     <td>
-                      {s.guardian && s.guardian.length > 0 ? (
+                      {s.guardian_name ? (
                         <div>
                           <div style={{ fontWeight: '500', fontSize: '0.8rem' }}>
-                            {s.guardian[0].name} ({s.guardian[0].relation})
+                            {s.guardian_name} ({s.guardian_relation})
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{s.guardian[0].phone}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{s.guardian_phone}</div>
                         </div>
                       ) : (
                         <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Not registered</span>
                       )}
                     </td>
-                    <td>{s.admission_date}</td>
+                    <td>{s.admission_date?.split('T')[0] || s.admission_date}</td>
                     <td>
                       <span className={`badge ${s.status === 'Active' ? 'badge-success' : 'badge-warning'}`}>
                         {s.status}
@@ -251,7 +209,7 @@ export default function Students() {
         <div className="modal-backdrop">
           <div className="modal-content">
             <div className="card-header">
-              <h3>Student Admission Form</h3>
+              <h3>Student Admission Form (MySQL Stored Procedure)</h3>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -410,7 +368,7 @@ export default function Students() {
                   className="btn btn-primary"
                   disabled={submitting}
                 >
-                  {submitting ? 'Executing Database Transaction...' : 'Confirm Admission'}
+                  {submitting ? 'Executing MySQL Transaction...' : 'Confirm Admission'}
                 </button>
               </div>
             </form>

@@ -1,13 +1,13 @@
 # Student & College Management System (SCMS)
 ### Database Management Systems Project-Based Learning (DBMS-PBL) Prototype
 
-An enterprise-grade, relational academic administrative ERP prototype engineered on **PostgreSQL (Supabase)** and **React + Vite**. The system guarantees business rule enforcement, referential integrity, and multi-tenant access control strictly within the database layer.
+An enterprise-grade, relational academic administrative ERP prototype engineered on **MySQL 8.0+**, **Node.js/Express**, and **React + Vite**. The system guarantees business rule enforcement, referential integrity, and multi-user access control strictly within the relational database layer.
 
 ---
 
-## 🏛️ 14 Core Domain Tables & Relationships
+## 🏛️ 14 Core Domain Tables & Relational Schema
 
-The relational architecture spans 14 normalized tables without soft mocks:
+The conceptual and relational design covers 14 normalized tables without soft mocks:
 
 ```
 [ department ]
@@ -20,8 +20,8 @@ The relational architecture spans 14 normalized tables without soft mocks:
 
 1. **`department`**: Academic faculties (`dept_id`, `dept_code`, `dept_name`, `office_email`)
 2. **`programme`**: Degree programs (`programme_id`, `dept_id`, `programme_code`, `programme_name`, `duration_years`, `status`)
-3. **`faculty`**: Academic staff profiles (`faculty_id`, `dept_id`, `employee_code`, `full_name`, `email`, `designation`)
-4. **`course`**: Curriculum courses (`course_id`, `dept_id`, `course_code`, `course_name`, `credits`, `course_type`)
+3. **`faculty`**: Academic staff profiles (`faculty_id`, `dept_id`, `employee_code`, `full_name`, `email`, `designation`, `status`)
+4. **`course`**: Curriculum courses (`course_id`, `dept_id`, `course_code`, `course_name`, `credits`, `course_type`, `status`)
 5. **`semester`**: Academic calendar terms (`semester_id`, `academic_year`, `term`, `start_date`, `end_date`)
 6. **`section`**: Allocated lecture/lab cohorts (`section_id`, `course_id`, `faculty_id`, `semester_id`, `section_code`, `room_no`, `capacity`)
 7. **`student`**: Admitted candidates (`student_id`, `programme_id`, `reg_no`, `full_name`, `dob`, `email`, `phone`, `admission_date`, `status`)
@@ -33,30 +33,53 @@ The relational architecture spans 14 normalized tables without soft mocks:
 13. **`fee_bill`**: Semester tuition invoices (`bill_id`, `student_id`, `semester_id`, `bill_date`, `amount_due`, `due_date`, `status`)
 14. **`payment`**: Transaction ledger (`payment_id`, `bill_id`, `payment_date`, `amount_paid`, `payment_mode`, `reference_no`)
 
----
-
-## 🛡️ Database-Enforced Business Rules
-
-The database serves as the absolute integrity layer:
-1. **Section Capacity**: Row-level locking trigger (`trg_registration_rules`) prevents registrations exceeding room capacity.
-2. **Duplicate Registration Prevention**: Unique constraints and composite checks block re-enrolment in the same course or section.
-3. **Marks Range Validation**: Check constraints enforce `marks BETWEEN 0 AND max_marks`.
-4. **Attendance Validation**: Strict enumeration (`Present`, `Absent`, `Late`) within valid semester calendar bounds.
-5. **Overpayment Rejection**: Trigger (`trg_payment_rules`) prevents cumulative payments from exceeding `amount_due`.
-6. **Deterministic Grade Trigger**: Automatically computes grades (`A+` to `F`) and grade points (0.0 to 10.0) upon examination submission.
-7. **Derived Bill Status**: Fee bills transition automatically between `Unpaid`, `Partially Paid`, and `Paid`.
+Additionally, authentication is managed via the **`user_account`** table (`user_id`, `email`, `password_hash`, `role`, `full_name`, `student_id`, `faculty_id`).
 
 ---
 
-## 👥 Role-Based Access Control (RLS)
+## 🛡️ MySQL Database Triggers & Integrity Rules
 
-- **Admin / Registrar**: Full read/write access to institutional structure, admissions, and reports.
-- **Faculty**: Access to assigned section rosters, attendance registers, and candidate evaluation.
-- **Student**: Read-only access restricted strictly to personal academic history, attendance, and fee statements.
-- **Accounts**: Student directory lookup, tuition fee invoice generation, and receipt recording.
+All critical business rules are enforced inside MySQL via triggers:
+1. **Section Capacity Barrier (`trg_registration_before_insert`)**:
+   Rejects student registration if the section occupancy has reached its room capacity limit (`capacity`).
+2. **Duplicate Registration Prevention (`trg_registration_before_insert`)**:
+   Unique constraints and trigger checks prevent a student from registering twice in the same section or enrolling in multiple sections of the same course within a semester.
+3. **Attendance Validation (`trg_attendance_before_insert`)**:
+   Restricts statuses to `Present`, `Absent`, or `Late`; rejects attendance for dropped registrations and dates outside the scheduled semester.
+4. **Overpayment Rejection (`trg_payment_before_insert`)**:
+   Prevents any payment where `amount_paid` exceeds the remaining balance (`amount_due - total_paid`).
+5. **Fee Bill Status Synchronization (`trg_payment_after_insert`)**:
+   Automatically updates the invoice status (`Unpaid` → `Partially Paid` → `Paid`) upon payment insertion.
+6. **Deterministic Grade Trigger (`trg_examination_after_insert` & `trg_examination_after_update`)**:
+   Automatically computes grades (`A+` to `F`) and grade points (`10.0` to `0.0`) based on marks:
+   - 90–100 = `A+` (10.0) | 80–89.99 = `A` (9.0) | 70–79.99 = `B+` (8.0) | 60–69.99 = `B` (7.0)
+   - 50–59.99 = `C` (6.0) | 40–49.99 = `D` (5.0) | < 40 = `F` (0.0)
 
-### Pre-Seeded Demo Accounts
-Password for all demo accounts: `Demo@12345`
+---
+
+## ⚙️ Stored Procedures & Multi-Step Transactions
+
+Located in `database/procedures.sql`:
+- **`sp_admit_student`**: Atomically inserts the student profile and guardian contact in a single transaction with automatic rollback on failure.
+- **`sp_record_exam_result`**: Handles atomic exam score insertion or updates, automatically triggering grade derivation.
+
+---
+
+## 📊 Analytical MySQL Views
+
+Located in `database/views.sql`:
+- **`v_section_occupancy`**: Tracks registered count, capacity, remaining seats, and full flags.
+- **`v_attendance_summary`**: Computes total sessions, attended sessions, percentage, and flags attendance shortage (< 75%).
+- **`v_result_analysis`**: Calculates average, highest, lowest scores, and pass percentages per section.
+- **`v_student_academic_history`**: Aggregates Mid-Term and End-Term evaluation and course credits.
+- **`v_fee_dues`** & **`v_student_dues`**: Invoicing statements, payments received, balances, and overdue days.
+- **`v_department_summary`**: Aggregate student counts and curriculum capacities per department.
+
+---
+
+## 👥 Demo User Accounts
+
+All pre-seeded demo accounts use the password: `Demo@12345`
 - **Registrar (Admin)**: `registrar@scms.edu.in`
 - **Faculty (Prof. Priya)**: `priya.raghavan@scms.edu.in`
 - **Accounts Officer**: `accounts@scms.edu.in`
@@ -64,43 +87,43 @@ Password for all demo accounts: `Demo@12345`
 
 ---
 
-## 🚀 Setup & Local Execution
+## 🚀 Setup & Execution Guide
 
-### 1. Clone & Install Dependencies
-```bash
-git clone https://github.com/404Vardan/dbms-pbl.git
-cd dbms-pbl
-npm install
+### 1. Database Setup (MySQL CLI or MySQL Workbench)
+Run the SQL scripts in this exact order:
+```sql
+SOURCE database/schema.sql;
+SOURCE database/triggers.sql;
+SOURCE database/procedures.sql;
+SOURCE database/views.sql;
+SOURCE database/seed.sql;
 ```
 
-### 2. Configure Supabase Database
-1. Open your Supabase Dashboard: [https://supabase.com/dashboard](https://supabase.com/dashboard)
-2. Go to **SQL Editor** and execute the scripts in the following order:
-   - `database/schema.sql` (Creates 14 tables, constraints, indexes)
-   - `database/triggers.sql` (Enforces business rules and transactional RPCs)
-   - `database/security.sql` (Configures Row Level Security & permissions)
-   - `database/reports.sql` (Compiles the 6 analytical views & dashboard RPC)
-   - `database/seed.sql` (Populates realistic linked Indian university demo data)
+Or via command line:
+```bash
+mysql -u root -p < database/schema.sql
+mysql -u root -p < database/triggers.sql
+mysql -u root -p < database/procedures.sql
+mysql -u root -p < database/views.sql
+mysql -u root -p < database/seed.sql
+```
 
-### 3. Configure Environment Variables
-Copy `.env.example` to `.env`:
+### 2. Configure Environment (`.env`)
+Copy `.env.example` to `.env` and fill in your MySQL credentials:
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=scms_db
+PORT=5000
+JWT_SECRET=scms_jwt_secret_university_erp_2026
 ```
 
-### 4. Start Development Server
+### 3. Install & Start Application
 ```bash
-npm run dev
+npm install
+npm run start
 ```
-
----
-
-## 📊 Analytical SQL Views
-The system implements 6 enterprise analytical views accessible under the **Reports** module:
-- `v_section_occupancy`: Real-time registration vs. capacity tracking.
-- `v_attendance_summary`: Attendance percentage calculation and `<75%` shortage alerting.
-- `v_result_analysis`: Aggregate performance, passing percentage, and grade distributions.
-- `v_student_academic_history`: Transcripts with Mid-Term and End-Term evaluation.
-- `v_fee_dues`: Tuition fee recovery, outstanding balances, and overdue days.
-- `v_department_summary`: Department student counts and course capacities.
+- Express API server runs on `http://localhost:5000`
+- React Vite frontend opens on `http://localhost:5173`
