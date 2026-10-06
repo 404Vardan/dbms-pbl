@@ -23,7 +23,18 @@ dist-ssr
 *.sln
 *.sw?
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
 # Environment Variables
 .env
 .env*.local
+server/.env
 !.env.example

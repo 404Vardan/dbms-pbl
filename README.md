@@ -1,7 +1,41 @@
 # Student & College Management System (SCMS)
 ### Database Management Systems Project-Based Learning (DBMS-PBL) Prototype
 
-An enterprise-grade, relational academic administrative ERP prototype engineered on **MySQL 8.0+**, **Node.js/Express**, and **React + Vite**. The system guarantees business rule enforcement, referential integrity, and multi-user access control strictly within the relational database layer.
+An enterprise-grade, relational academic administrative ERP prototype engineered on **MySQL 8.0+**, **Python / Flask**, **MySQL Connector/Python**, and **React + Vite**. The system guarantees business rule enforcement, referential integrity, and multi-user access control strictly within the relational database layer.
+
+---
+
+## 🏗️ System Architecture & Academic Technology Stack
+
+```
+                 STUDENT & COLLEGE
+                 MANAGEMENT SYSTEM
+                         │
+                  React Frontend (Vite)
+                         │
+                    REST API (JSON)
+                         │
+                  Python + Flask
+                         │
+             MySQL Connector/Python
+                         │
+                 MySQL 8.0+ (scms_db)
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+      Tables          Triggers        Procedures
+        │                                 │
+        └────────────── Views ────────────┘
+```
+
+| Component | Technology | Specification / Role |
+| :--- | :--- | :--- |
+| **Frontend Framework** | React 19 + Vite | Single Page Application with dynamic dashboards, modals, & tables |
+| **Backend Language** | Python 3.x | Lightweight, modular REST API controller |
+| **Backend Framework** | Flask | Blueprint-based routing and JSON serialization |
+| **Database Connector** | `mysql-connector-python` | Native binary connector communicating directly with MySQL |
+| **Database Engine** | MySQL 8.0+ / 9.x | `InnoDB` engine with UTF8MB4 character encoding |
+| **Authentication** | Flask + bcrypt + PyJWT | Role-based authentication (Admin, Faculty, Accounts, Student) |
 
 ---
 
@@ -61,7 +95,7 @@ All critical business rules are enforced inside MySQL via triggers:
 
 Located in `database/procedures.sql`:
 - **`sp_admit_student`**: Atomically inserts the student profile and guardian contact in a single transaction with automatic rollback on failure.
-- **`sp_record_exam_result`**: Handles atomic exam score insertion or updates, automatically triggering grade derivation.
+- **`sp_record_exam_result`**: Handles atomic exam score insertion or updates, automatically triggering deterministic grade derivation.
 
 ---
 
@@ -109,7 +143,7 @@ mysql -u root -p < database/seed.sql
 ```
 
 ### 2. Configure Environment (`.env`)
-Copy `.env.example` to `.env` and fill in your MySQL credentials:
+Copy `.env.example` to `.env`:
 ```env
 DB_HOST=localhost
 DB_PORT=3306
@@ -120,10 +154,15 @@ PORT=5000
 JWT_SECRET=scms_jwt_secret_university_erp_2026
 ```
 
-### 3. Install & Start Application
+### 3. Install Python Dependencies
+```bash
+pip install -r server/requirements.txt
+```
+
+### 4. Install Frontend Dependencies & Start Application
 ```bash
 npm install
-npm run start
+npm start
 ```
-- Express API server runs on `http://localhost:5000`
+- Flask backend API runs on `http://localhost:5000`
 - React Vite frontend opens on `http://localhost:5173`
