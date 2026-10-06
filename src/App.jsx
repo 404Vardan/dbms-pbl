@@ -23,7 +23,9 @@ function ProtectedRoute({ children }) {
   if (loading) {
     return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Authenticating user session...</div>;
   }
-  // Allow unauthenticated demo preview if user hasn't explicitly signed in
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
   return children;
 }
 
