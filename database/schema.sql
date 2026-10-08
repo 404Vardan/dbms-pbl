@@ -1,15 +1,14 @@
--- =============================================================================
--- SCMS — Student & College Management System
--- Database Engine : MySQL 8.0+
--- File            : database/schema.sql
--- Description     : Creates the database and all 14 core domain tables
---                   plus the user_account table for authentication.
--- =============================================================================
+-- ============================================================
+-- Student & College Management System (SCMS)
+-- Database: scms_db
+-- Author: Vardan Desai (25WU0104029) | Woxsen University
+-- DBMS PBL Prototype - Core Relational Schema (3NF)
+-- ============================================================
 
-CREATE DATABASE IF NOT EXISTS scms_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS scms_db;
 USE scms_db;
 
--- Disable foreign key checks during schema creation
+-- Disable FK checks during clean setup
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS payment;
@@ -30,264 +29,268 @@ DROP TABLE IF EXISTS user_account;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- -----------------------------------------------------------------------------
--- 1. DEPARTMENT
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 1. DEPARTMENT TABLE
+-- ------------------------------------------------------------
 CREATE TABLE department (
-    dept_id       INT AUTO_INCREMENT PRIMARY KEY,
-    dept_code     VARCHAR(10)  NOT NULL,
-    dept_name     VARCHAR(100) NOT NULL,
-    office_email  VARCHAR(120) NULL,
-    CONSTRAINT uq_department_code  UNIQUE (dept_code),
-    CONSTRAINT uq_department_name  UNIQUE (dept_name),
-    CONSTRAINT uq_department_email UNIQUE (office_email)
-) ENGINE=InnoDB;
+    department_id INT AUTO_INCREMENT PRIMARY KEY,
+    dept_code VARCHAR(10) NOT NULL UNIQUE,
+    dept_name VARCHAR(100) NOT NULL,
+    building VARCHAR(50),
+    established_year INT CHECK (established_year >= 1900),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 2. PROGRAMME
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 2. PROGRAMME TABLE
+-- ------------------------------------------------------------
 CREATE TABLE programme (
-    programme_id    INT AUTO_INCREMENT PRIMARY KEY,
-    dept_id         INT          NOT NULL,
-    programme_code  VARCHAR(15)  NOT NULL,
-    programme_name  VARCHAR(120) NOT NULL,
-    duration_years  TINYINT      NOT NULL,
-    status          VARCHAR(10)  NOT NULL DEFAULT 'Active',
-    CONSTRAINT fk_programme_department FOREIGN KEY (dept_id) REFERENCES department (dept_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_programme_code       UNIQUE (programme_code),
-    CONSTRAINT ck_programme_duration   CHECK (duration_years > 0),
-    CONSTRAINT ck_programme_status     CHECK (status IN ('Active', 'Inactive'))
-) ENGINE=InnoDB;
+    programme_id INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    prog_code VARCHAR(15) NOT NULL UNIQUE,
+    prog_name VARCHAR(100) NOT NULL,
+    degree_type VARCHAR(20) NOT NULL,
+    duration_years INT NOT NULL CHECK (duration_years BETWEEN 1 AND 5),
+    total_semesters INT NOT NULL CHECK (total_semesters BETWEEN 2 AND 10),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_programme_dept FOREIGN KEY (department_id) 
+        REFERENCES department(department_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 3. FACULTY
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 3. FACULTY TABLE
+-- ------------------------------------------------------------
 CREATE TABLE faculty (
-    faculty_id     INT AUTO_INCREMENT PRIMARY KEY,
-    dept_id        INT          NOT NULL,
-    employee_code  VARCHAR(15)  NOT NULL,
-    full_name      VARCHAR(100) NOT NULL,
-    email          VARCHAR(120) NOT NULL,
-    designation    VARCHAR(60)  NOT NULL,
-    status         VARCHAR(10)  NOT NULL DEFAULT 'Active',
-    CONSTRAINT fk_faculty_department FOREIGN KEY (dept_id) REFERENCES department (dept_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_faculty_employee_code UNIQUE (employee_code),
-    CONSTRAINT uq_faculty_email         UNIQUE (email),
-    CONSTRAINT ck_faculty_status        CHECK (status IN ('Active', 'Inactive'))
-) ENGINE=InnoDB;
+    faculty_id INT AUTO_INCREMENT PRIMARY KEY,
+    employee_id VARCHAR(20) NOT NULL UNIQUE,
+    department_id INT NOT NULL,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    phone VARCHAR(20),
+    designation VARCHAR(50) NOT NULL,
+    joining_date DATE NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_faculty_dept FOREIGN KEY (department_id) 
+        REFERENCES department(department_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 4. COURSE
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 4. COURSE TABLE
+-- ------------------------------------------------------------
 CREATE TABLE course (
-    course_id    INT AUTO_INCREMENT PRIMARY KEY,
-    dept_id      INT          NOT NULL,
-    course_code  VARCHAR(12)  NOT NULL,
-    course_name  VARCHAR(120) NOT NULL,
-    credits      TINYINT      NOT NULL,
-    course_type  VARCHAR(10)  NOT NULL DEFAULT 'Core',
-    status       VARCHAR(10)  NOT NULL DEFAULT 'Active',
-    CONSTRAINT fk_course_department FOREIGN KEY (dept_id) REFERENCES department (dept_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_course_code       UNIQUE (course_code),
-    CONSTRAINT ck_course_credits    CHECK (credits > 0),
-    CONSTRAINT ck_course_type       CHECK (course_type IN ('Core', 'Elective', 'Lab', 'Project')),
-    CONSTRAINT ck_course_status     CHECK (status IN ('Active', 'Inactive'))
-) ENGINE=InnoDB;
+    course_id INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    course_code VARCHAR(15) NOT NULL UNIQUE,
+    course_name VARCHAR(120) NOT NULL,
+    credits INT NOT NULL CHECK (credits BETWEEN 1 AND 8),
+    course_level VARCHAR(30) NOT NULL DEFAULT 'Undergraduate',
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_course_dept FOREIGN KEY (department_id) 
+        REFERENCES department(department_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 5. SEMESTER
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 5. SEMESTER TABLE
+-- ------------------------------------------------------------
 CREATE TABLE semester (
-    semester_id    INT AUTO_INCREMENT PRIMARY KEY,
-    academic_year  VARCHAR(9)  NOT NULL,           -- e.g. '2026-27'
-    term           VARCHAR(10) NOT NULL,           -- Odd / Even / Summer
-    start_date     DATE        NOT NULL,
-    end_date       DATE        NOT NULL,
-    CONSTRAINT uq_semester_year_term UNIQUE (academic_year, term),
-    CONSTRAINT ck_semester_dates     CHECK (end_date >= start_date),
-    CONSTRAINT ck_semester_term      CHECK (term IN ('Odd', 'Even', 'Summer'))
-) ENGINE=InnoDB;
+    semester_id INT AUTO_INCREMENT PRIMARY KEY,
+    semester_code VARCHAR(20) NOT NULL UNIQUE,
+    semester_name VARCHAR(50) NOT NULL,
+    academic_year VARCHAR(15) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_sem_dates CHECK (start_date < end_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 6. SECTION
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 6. SECTION TABLE
+-- ------------------------------------------------------------
 CREATE TABLE section (
-    section_id    INT AUTO_INCREMENT PRIMARY KEY,
-    course_id     INT         NOT NULL,
-    faculty_id    INT         NOT NULL,
-    semester_id   INT         NOT NULL,
-    section_code  VARCHAR(5)  NOT NULL,
-    room_no       VARCHAR(15) NOT NULL,
-    capacity      SMALLINT    NOT NULL,
-    CONSTRAINT fk_section_course   FOREIGN KEY (course_id)   REFERENCES course (course_id)     ON DELETE RESTRICT,
-    CONSTRAINT fk_section_faculty  FOREIGN KEY (faculty_id)  REFERENCES faculty (faculty_id)   ON DELETE RESTRICT,
-    CONSTRAINT fk_section_semester FOREIGN KEY (semester_id) REFERENCES semester (semester_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_section_course_semester_code UNIQUE (course_id, semester_id, section_code),
-    CONSTRAINT ck_section_capacity CHECK (capacity > 0)
-) ENGINE=InnoDB;
+    section_id INT AUTO_INCREMENT PRIMARY KEY,
+    course_id INT NOT NULL,
+    semester_id INT NOT NULL,
+    faculty_id INT NULL,
+    section_name VARCHAR(30) NOT NULL,
+    capacity INT NOT NULL DEFAULT 30 CHECK (capacity > 0),
+    room_no VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_section_course_sem UNIQUE (course_id, semester_id, section_name),
+    CONSTRAINT fk_section_course FOREIGN KEY (course_id) 
+        REFERENCES course(course_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_section_sem FOREIGN KEY (semester_id) 
+        REFERENCES semester(semester_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_section_faculty FOREIGN KEY (faculty_id) 
+        REFERENCES faculty(faculty_id) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 7. STUDENT
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 7. STUDENT TABLE
+-- ------------------------------------------------------------
 CREATE TABLE student (
-    student_id      INT AUTO_INCREMENT PRIMARY KEY,
-    programme_id    INT          NOT NULL,
-    reg_no          VARCHAR(20)  NOT NULL,
-    full_name       VARCHAR(100) NOT NULL,
-    dob             DATE         NOT NULL,
-    email           VARCHAR(120) NOT NULL,
-    phone           VARCHAR(15)  NOT NULL,
-    admission_date  DATE         NOT NULL,
-    status          VARCHAR(12)  NOT NULL DEFAULT 'Active',
-    CONSTRAINT fk_student_programme FOREIGN KEY (programme_id) REFERENCES programme (programme_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_student_reg_no    UNIQUE (reg_no),
-    CONSTRAINT uq_student_email     UNIQUE (email),
-    CONSTRAINT ck_student_dob       CHECK (dob < admission_date),
-    CONSTRAINT ck_student_status    CHECK (status IN ('Active', 'Inactive', 'Graduated', 'Withdrawn'))
-) ENGINE=InnoDB;
+    student_id INT AUTO_INCREMENT PRIMARY KEY,
+    reg_number VARCHAR(20) NOT NULL UNIQUE,
+    programme_id INT NOT NULL,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    phone VARCHAR(20),
+    dob DATE NOT NULL,
+    gender VARCHAR(15) NOT NULL,
+    admission_date DATE NOT NULL,
+    current_semester INT NOT NULL DEFAULT 1 CHECK (current_semester BETWEEN 1 AND 10),
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive', 'Suspended', 'Graduated')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_student_prog FOREIGN KEY (programme_id) 
+        REFERENCES programme(programme_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 8. GUARDIAN
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 8. GUARDIAN TABLE
+-- ------------------------------------------------------------
 CREATE TABLE guardian (
-    guardian_id  INT AUTO_INCREMENT PRIMARY KEY,
-    student_id   INT          NOT NULL,
-    name         VARCHAR(100) NOT NULL,
-    relation     VARCHAR(20)  NOT NULL,
-    phone        VARCHAR(15)  NOT NULL,
-    email        VARCHAR(120) NULL,
-    address      TEXT         NULL,
-    CONSTRAINT fk_guardian_student FOREIGN KEY (student_id) REFERENCES student (student_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_guardian_email   UNIQUE (email),
-    CONSTRAINT ck_guardian_relation CHECK (relation IN ('Father', 'Mother', 'Guardian', 'Sibling', 'Spouse', 'Other'))
-) ENGINE=InnoDB;
+    guardian_id INT AUTO_INCREMENT PRIMARY KEY,
+    student_id INT NOT NULL,
+    guardian_name VARCHAR(100) NOT NULL,
+    relationship VARCHAR(50) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(100),
+    address VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_guardian_student FOREIGN KEY (student_id) 
+        REFERENCES student(student_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 9. REGISTRATION
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 9. REGISTRATION TABLE
+-- ------------------------------------------------------------
 CREATE TABLE registration (
-    registration_id  INT AUTO_INCREMENT PRIMARY KEY,
-    student_id       INT         NOT NULL,
-    section_id       INT         NOT NULL,
-    registered_on    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status           VARCHAR(12) NOT NULL DEFAULT 'Registered',
-    CONSTRAINT fk_registration_student FOREIGN KEY (student_id) REFERENCES student (student_id) ON DELETE RESTRICT,
-    CONSTRAINT fk_registration_section FOREIGN KEY (section_id) REFERENCES section (section_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_registration_student_section UNIQUE (student_id, section_id),
-    CONSTRAINT ck_registration_status CHECK (status IN ('Registered', 'Dropped', 'Completed'))
-) ENGINE=InnoDB;
+    registration_id INT AUTO_INCREMENT PRIMARY KEY,
+    student_id INT NOT NULL,
+    course_id INT NOT NULL,
+    semester_id INT NOT NULL,
+    section_id INT NOT NULL,
+    registration_date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'Enrolled' CHECK (status IN ('Enrolled', 'Dropped', 'Completed')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_student_course_semester UNIQUE (student_id, course_id, semester_id),
+    CONSTRAINT fk_reg_student FOREIGN KEY (student_id) 
+        REFERENCES student(student_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_reg_course FOREIGN KEY (course_id) 
+        REFERENCES course(course_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_reg_sem FOREIGN KEY (semester_id) 
+        REFERENCES semester(semester_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_reg_section FOREIGN KEY (section_id) 
+        REFERENCES section(section_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 10. ATTENDANCE
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 10. ATTENDANCE TABLE
+-- ------------------------------------------------------------
 CREATE TABLE attendance (
-    attendance_id    INT AUTO_INCREMENT PRIMARY KEY,
-    registration_id  INT        NOT NULL,
-    attendance_date  DATE       NOT NULL,
-    status           VARCHAR(7) NOT NULL,
-    CONSTRAINT fk_attendance_registration FOREIGN KEY (registration_id) REFERENCES registration (registration_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_attendance_registration_date UNIQUE (registration_id, attendance_date),
-    CONSTRAINT ck_attendance_status CHECK (status IN ('Present', 'Absent', 'Late'))
-) ENGINE=InnoDB;
+    attendance_id INT AUTO_INCREMENT PRIMARY KEY,
+    registration_id INT NOT NULL,
+    attendance_date DATE NOT NULL,
+    status VARCHAR(15) NOT NULL CHECK (status IN ('Present', 'Absent', 'Excused')),
+    remarks VARCHAR(255),
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_reg_date UNIQUE (registration_id, attendance_date),
+    CONSTRAINT fk_att_reg FOREIGN KEY (registration_id) 
+        REFERENCES registration(registration_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 11. EXAMINATION
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 11. EXAMINATION TABLE
+-- ------------------------------------------------------------
 CREATE TABLE examination (
-    exam_id          INT AUTO_INCREMENT PRIMARY KEY,
-    registration_id  INT           NOT NULL,
-    exam_type        VARCHAR(12)   NOT NULL,
-    exam_date        DATE          NOT NULL,
-    max_marks        DECIMAL(5,2)  NOT NULL DEFAULT 100.00,
-    marks            DECIMAL(5,2)  NULL,
-    CONSTRAINT fk_examination_registration FOREIGN KEY (registration_id) REFERENCES registration (registration_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_examination_registration_type UNIQUE (registration_id, exam_type),
-    CONSTRAINT ck_examination_type      CHECK (exam_type IN ('Mid-Term', 'End-Term', 'Internal', 'Practical')),
-    CONSTRAINT ck_examination_max_marks CHECK (max_marks > 0 AND max_marks <= 100),
-    CONSTRAINT ck_examination_marks     CHECK (marks IS NULL OR (marks >= 0 AND marks <= 100 AND marks <= max_marks))
-) ENGINE=InnoDB;
+    exam_id INT AUTO_INCREMENT PRIMARY KEY,
+    registration_id INT NOT NULL,
+    exam_type VARCHAR(30) NOT NULL CHECK (exam_type IN ('Mid-Term', 'End-Term', 'Quiz', 'Assignment', 'Lab-Exam')),
+    exam_date DATE NOT NULL,
+    max_marks DECIMAL(5,2) NOT NULL DEFAULT 100.00 CHECK (max_marks > 0),
+    marks_obtained DECIMAL(5,2) NOT NULL CHECK (marks_obtained >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_marks_bounds CHECK (marks_obtained <= max_marks),
+    CONSTRAINT fk_exam_reg FOREIGN KEY (registration_id) 
+        REFERENCES registration(registration_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 12. GRADE
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 12. GRADE TABLE (Populated automatically by trigger)
+-- ------------------------------------------------------------
 CREATE TABLE grade (
-    grade_id      INT AUTO_INCREMENT PRIMARY KEY,
-    exam_id       INT          NOT NULL,
-    grade_letter  VARCHAR(2)   NOT NULL,
-    grade_point   DECIMAL(3,1) NOT NULL,
-    graded_on     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_grade_examination FOREIGN KEY (exam_id) REFERENCES examination (exam_id) ON DELETE CASCADE,
-    CONSTRAINT uq_grade_exam        UNIQUE (exam_id),
-    CONSTRAINT ck_grade_letter      CHECK (grade_letter IN ('A+', 'A', 'B+', 'B', 'C', 'D', 'F')),
-    CONSTRAINT ck_grade_point       CHECK (grade_point >= 0 AND grade_point <= 10)
-) ENGINE=InnoDB;
+    grade_id INT AUTO_INCREMENT PRIMARY KEY,
+    exam_id INT NOT NULL UNIQUE,
+    percentage DECIMAL(5,2) NOT NULL,
+    letter_grade VARCHAR(5) NOT NULL,
+    grade_point DECIMAL(3,1) NOT NULL,
+    remarks VARCHAR(50),
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_grade_exam FOREIGN KEY (exam_id) 
+        REFERENCES examination(exam_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 13. FEE_BILL
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 13. FEE_BILL TABLE
+-- ------------------------------------------------------------
 CREATE TABLE fee_bill (
-    bill_id      INT AUTO_INCREMENT PRIMARY KEY,
-    student_id   INT           NOT NULL,
-    semester_id  INT           NOT NULL,
-    bill_date    DATE          NOT NULL DEFAULT (CURRENT_DATE),
-    amount_due   DECIMAL(10,2) NOT NULL,
-    due_date     DATE          NOT NULL,
-    status       VARCHAR(15)   NOT NULL DEFAULT 'Unpaid',
-    CONSTRAINT fk_fee_bill_student  FOREIGN KEY (student_id)  REFERENCES student (student_id)   ON DELETE RESTRICT,
-    CONSTRAINT fk_fee_bill_semester FOREIGN KEY (semester_id) REFERENCES semester (semester_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_fee_bill_student_semester UNIQUE (student_id, semester_id),
-    CONSTRAINT ck_fee_bill_amount   CHECK (amount_due >= 0),
-    CONSTRAINT ck_fee_bill_due_date CHECK (due_date >= bill_date),
-    CONSTRAINT ck_fee_bill_status   CHECK (status IN ('Unpaid', 'Partially Paid', 'Paid'))
-) ENGINE=InnoDB;
+    bill_id INT AUTO_INCREMENT PRIMARY KEY,
+    bill_number VARCHAR(30) NOT NULL UNIQUE,
+    student_id INT NOT NULL,
+    semester_id INT NOT NULL,
+    fee_type VARCHAR(50) NOT NULL DEFAULT 'Tuition Fee',
+    amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+    due_date DATE NOT NULL,
+    issue_date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid', 'Partially Paid', 'Paid')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_bill_student FOREIGN KEY (student_id) 
+        REFERENCES student(student_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_bill_sem FOREIGN KEY (semester_id) 
+        REFERENCES semester(semester_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- 14. PAYMENT
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 14. PAYMENT TABLE
+-- ------------------------------------------------------------
 CREATE TABLE payment (
-    payment_id    INT AUTO_INCREMENT PRIMARY KEY,
-    bill_id       INT           NOT NULL,
-    payment_date  DATE          NOT NULL DEFAULT (CURRENT_DATE),
-    amount_paid   DECIMAL(10,2) NOT NULL,
-    payment_mode  VARCHAR(10)   NOT NULL,
-    reference_no  VARCHAR(40)   NULL,
-    CONSTRAINT fk_payment_fee_bill FOREIGN KEY (bill_id) REFERENCES fee_bill (bill_id) ON DELETE RESTRICT,
-    CONSTRAINT uq_payment_reference UNIQUE (reference_no),
-    CONSTRAINT ck_payment_amount    CHECK (amount_paid > 0),
-    CONSTRAINT ck_payment_mode      CHECK (payment_mode IN ('Cash', 'UPI', 'Card', 'NEFT', 'Cheque', 'DD'))
-) ENGINE=InnoDB;
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    receipt_number VARCHAR(30) NOT NULL UNIQUE,
+    bill_id INT NOT NULL,
+    amount_paid DECIMAL(10,2) NOT NULL CHECK (amount_paid > 0),
+    payment_date DATE NOT NULL,
+    payment_mode VARCHAR(30) NOT NULL,
+    transaction_ref VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pay_bill FOREIGN KEY (bill_id) 
+        REFERENCES fee_bill(bill_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- AUTHENTICATION TABLE: user_account (Replaces Supabase Auth)
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- 15. USER_ACCOUNT TABLE
+-- ------------------------------------------------------------
 CREATE TABLE user_account (
-    user_id       INT AUTO_INCREMENT PRIMARY KEY,
-    email         VARCHAR(120) NOT NULL UNIQUE,
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    role          VARCHAR(15)  NOT NULL,
-    full_name     VARCHAR(100) NOT NULL,
-    student_id    INT          NULL UNIQUE,
-    faculty_id    INT          NULL UNIQUE,
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_user_student FOREIGN KEY (student_id) REFERENCES student (student_id) ON DELETE SET NULL,
-    CONSTRAINT fk_user_faculty FOREIGN KEY (faculty_id) REFERENCES faculty (faculty_id) ON DELETE SET NULL,
-    CONSTRAINT ck_user_role CHECK (role IN ('admin', 'faculty', 'student', 'accounts'))
-) ENGINE=InnoDB;
+    role VARCHAR(20) NOT NULL CHECK (role IN ('Admin', 'Faculty', 'Student')),
+    reference_id INT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    last_login TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- -----------------------------------------------------------------------------
--- INDEXES
--- -----------------------------------------------------------------------------
-CREATE INDEX ix_programme_dept        ON programme (dept_id);
-CREATE INDEX ix_faculty_dept          ON faculty (dept_id);
-CREATE INDEX ix_course_dept           ON course (dept_id);
-CREATE INDEX ix_section_faculty       ON section (faculty_id);
-CREATE INDEX ix_section_semester      ON section (semester_id);
-CREATE INDEX ix_student_programme     ON student (programme_id);
-CREATE INDEX ix_student_name          ON student (full_name);
-CREATE INDEX ix_guardian_student      ON guardian (student_id);
-CREATE INDEX ix_registration_section  ON registration (section_id, status);
-CREATE INDEX ix_attendance_date       ON attendance (attendance_date);
-CREATE INDEX ix_examination_date      ON examination (exam_date);
-CREATE INDEX ix_fee_bill_semester     ON fee_bill (semester_id);
-CREATE INDEX ix_payment_bill          ON payment (bill_id);
-CREATE INDEX ix_payment_date          ON payment (payment_date DESC);
+-- Indexes for performance on frequently queried foreign keys & filters
+CREATE INDEX idx_student_reg ON student(reg_number);
+CREATE INDEX idx_student_prog ON student(programme_id);
+CREATE INDEX idx_course_code ON course(course_code);
+CREATE INDEX idx_reg_lookup ON registration(student_id, semester_id);
+CREATE INDEX idx_att_reg ON attendance(registration_id);
+CREATE INDEX idx_exam_reg ON examination(registration_id);
+CREATE INDEX idx_bill_student ON fee_bill(student_id, status);
+CREATE INDEX idx_payment_bill ON payment(bill_id);

@@ -1,247 +1,260 @@
--- =============================================================================
--- SCMS — Seed Data & Built-in Test Scenarios (MySQL 8.0+)
--- File : database/seed.sql
--- Description : Inserts realistic Indian university demo records across
---               all 14 domain tables + 4 pre-seeded demo user accounts.
---
--- Demo Accounts (Password for all accounts is 'Demo@12345'):
---   - Registrar (Admin)   : registrar@scms.edu.in
---   - Faculty (Dr. Priya) : priya.raghavan@scms.edu.in
---   - Accounts Officer    : accounts@scms.edu.in
---   - Student (Meera Nair): meera.nair@students.scms.edu.in
---
--- Built-in Test Scenarios:
---   - Section CS203-B (Sec B) is FULL (3/3 seats) -> Capacity violation test
---   - Aarav Mehta already enrolled in CS203-A     -> Duplicate registration test
---   - Meera Nair fee bill: ₹92,500 due, ₹50,000 paid (₹42,500 balance) -> Overpayment test
--- =============================================================================
+-- ============================================================
+-- Student & College Management System (SCMS)
+-- Database: scms_db
+-- Author: Vardan Desai (25WU0104029) | Woxsen University
+-- Seed Data: Academic entities, registrations, exams, dues & demo users
+-- ============================================================
 
 USE scms_db;
 
-SET FOREIGN_KEY_CHECKS = 0;
+-- ------------------------------------------------------------
+-- 1. DEPARTMENTS (5 Academic Departments)
+-- ------------------------------------------------------------
+INSERT INTO department (department_id, dept_code, dept_name, building, established_year) VALUES
+(1, 'CSE', 'Computer Science & Engineering', 'Aryabhata Academic Block', 2014),
+(2, 'ECE', 'Electronics & Communication Engineering', 'Ramanujan Tech Wing', 2015),
+(3, 'MECH', 'Mechanical Engineering', 'Visvesvaraya Innovation Center', 2014),
+(4, 'MGMT', 'School of Business Management', 'Chanakya Management Complex', 2016),
+(5, 'DES', 'School of Art & Design', 'Da Vinci Design Studio', 2018)
+ON DUPLICATE KEY UPDATE dept_name=VALUES(dept_name);
 
-TRUNCATE TABLE payment;
-TRUNCATE TABLE fee_bill;
-TRUNCATE TABLE grade;
-TRUNCATE TABLE examination;
-TRUNCATE TABLE attendance;
-TRUNCATE TABLE registration;
-TRUNCATE TABLE guardian;
-TRUNCATE TABLE student;
-TRUNCATE TABLE section;
-TRUNCATE TABLE semester;
-TRUNCATE TABLE course;
-TRUNCATE TABLE faculty;
-TRUNCATE TABLE programme;
-TRUNCATE TABLE department;
-TRUNCATE TABLE user_account;
+-- ------------------------------------------------------------
+-- 2. PROGRAMMES (6 Degree Programmes)
+-- ------------------------------------------------------------
+INSERT INTO programme (programme_id, department_id, prog_code, prog_name, degree_type, duration_years, total_semesters) VALUES
+(1, 1, 'BTECH-AIML', 'B.Tech Computer Science & Engineering (AI & ML)', 'B.Tech', 4, 8),
+(2, 1, 'BTECH-DS', 'B.Tech Computer Science (Data Science)', 'B.Tech', 4, 8),
+(3, 2, 'BTECH-ECE', 'B.Tech Electronics & Communication Engineering', 'B.Tech', 4, 8),
+(4, 3, 'BTECH-MECH', 'B.Tech Mechanical & Robotics Engineering', 'B.Tech', 4, 8),
+(5, 4, 'BBA-FIN', 'Bachelor of Business Administration (Finance & Analytics)', 'BBA', 3, 6),
+(6, 5, 'BDES-IND', 'Bachelor of Design (Industrial & Product Design)', 'B.Des', 4, 8)
+ON DUPLICATE KEY UPDATE prog_name=VALUES(prog_name);
 
-SET FOREIGN_KEY_CHECKS = 1;
+-- ------------------------------------------------------------
+-- 3. FACULTY (12 Faculty Members)
+-- ------------------------------------------------------------
+INSERT INTO faculty (faculty_id, employee_id, department_id, first_name, last_name, email, phone, designation, joining_date, is_active) VALUES
+(1, 'EMP0101', 1, 'Kavitha', 'Reddy', 'kavitha.reddy@woxsen.edu.in', '9876500101', 'Professor', '2016-07-01', TRUE),
+(2, 'EMP0102', 1, 'Srinivas', 'Rao', 'srinivas.rao@woxsen.edu.in', '9876500102', 'Associate Professor', '2018-01-15', TRUE),
+(3, 'EMP0103', 1, 'Ananya', 'Sharma', 'ananya.sharma@woxsen.edu.in', '9876500103', 'Assistant Professor', '2020-08-10', TRUE),
+(4, 'EMP0104', 1, 'Vikram', 'Malhotra', 'vikram.malhotra@woxsen.edu.in', '9876500104', 'Associate Professor', '2019-06-20', TRUE),
+(5, 'EMP0201', 2, 'Rajesh', 'Verma', 'rajesh.verma@woxsen.edu.in', '9876500201', 'Professor', '2015-08-01', TRUE),
+(6, 'EMP0202', 2, 'Pooja', 'Nair', 'pooja.nair@woxsen.edu.in', '9876500202', 'Assistant Professor', '2021-02-01', TRUE),
+(7, 'EMP0301', 3, 'Mahesh', 'Kulkarni', 'mahesh.kulkarni@woxsen.edu.in', '9876500301', 'Professor', '2014-09-15', TRUE),
+(8, 'EMP0302', 3, 'Deepak', 'Patel', 'deepak.patel@woxsen.edu.in', '9876500302', 'Assistant Professor', '2022-07-15', TRUE),
+(9, 'EMP0401', 4, 'Sunita', 'Menon', 'sunita.menon@woxsen.edu.in', '9876500401', 'Professor', '2017-06-01', TRUE),
+(10, 'EMP0402', 4, 'Arun', 'Choudhary', 'arun.choudhary@woxsen.edu.in', '9876500402', 'Associate Professor', '2019-11-10', TRUE),
+(11, 'EMP0501', 5, 'Meera', 'Sen', 'meera.sen@woxsen.edu.in', '9876500501', 'Associate Professor', '2018-09-01', TRUE),
+(12, 'EMP0502', 5, 'Rohan', 'Iyer', 'rohan.iyer@woxsen.edu.in', '9876500502', 'Assistant Professor', '2023-01-10', TRUE)
+ON DUPLICATE KEY UPDATE first_name=VALUES(first_name);
 
--- -----------------------------------------------------------------------------
--- 1. DEPARTMENT
--- -----------------------------------------------------------------------------
-INSERT INTO department (dept_id, dept_code, dept_name, office_email) VALUES
-(1, 'CSE', 'Computer Science & Engineering',          'cse.office@scms.edu.in'),
-(2, 'ECE', 'Electronics & Communication Engineering', 'ece.office@scms.edu.in'),
-(3, 'ME',  'Mechanical Engineering',                  'mech.office@scms.edu.in'),
-(4, 'SOM', 'School of Management',                    'som.office@scms.edu.in'),
-(5, 'BSH', 'Basic Sciences & Humanities',             'bsh.office@scms.edu.in');
+-- ------------------------------------------------------------
+-- 4. COURSES (12 Courses)
+-- ------------------------------------------------------------
+INSERT INTO course (course_id, department_id, course_code, course_name, credits, course_level, description) VALUES
+(1, 1, 'CSE201', 'Database Management Systems', 4, 'Undergraduate', 'Relational data modeling, SQL, Normalization, ACID Transactions, Indexing'),
+(2, 1, 'CSE202', 'Data Structures & Algorithms', 4, 'Undergraduate', 'Linear & non-linear structures, algorithmic complexity, graph theory'),
+(3, 1, 'CSE301', 'Machine Learning Foundations', 4, 'Undergraduate', 'Supervised and unsupervised learning, optimization, model evaluation'),
+(4, 1, 'CSE302', 'Artificial Intelligence & Neural Nets', 3, 'Undergraduate', 'Search heuristics, knowledge representation, deep learning architectures'),
+(5, 1, 'CSE205', 'Object Oriented Programming with Java', 3, 'Undergraduate', 'OOP design principles, inheritance, concurrency, JDBC'),
+(6, 2, 'ECE201', 'Digital System Design & HDL', 4, 'Undergraduate', 'Logic gates, combinational and sequential circuit design using Verilog'),
+(7, 2, 'ECE301', 'Microprocessors & Embedded Systems', 3, 'Undergraduate', 'ARM architecture, peripheral interfacing, real-time operating concepts'),
+(8, 3, 'MEC201', 'Thermodynamics & Heat Transfer', 4, 'Undergraduate', 'First and second laws, cycles, conduction and convection mechanics'),
+(9, 3, 'MEC301', 'Robotics & Automation', 3, 'Undergraduate', 'Kinematics, actuators, industrial sensors, robot path planning'),
+(10, 4, 'MGT101', 'Financial Accounting & Management', 3, 'Undergraduate', 'Balance sheets, cash flows, financial ratios, corporate budgeting'),
+(11, 4, 'MGT201', 'Marketing Principles & Strategy', 3, 'Undergraduate', 'Consumer behavior, marketing mix, digital advertising metrics'),
+(12, 5, 'DES101', 'Design Thinking & Visual Communication', 3, 'Undergraduate', 'Human-centered design, sketching, prototyping and ergonomic analysis')
+ON DUPLICATE KEY UPDATE course_name=VALUES(course_name);
 
--- -----------------------------------------------------------------------------
--- 2. PROGRAMME
--- -----------------------------------------------------------------------------
-INSERT INTO programme (programme_id, dept_id, programme_code, programme_name, duration_years, status) VALUES
-(1, 1, 'BTECH-CSE',  'B.Tech Computer Science & Engineering',          4, 'Active'),
-(2, 2, 'BTECH-ECE',  'B.Tech Electronics & Communication Engineering', 4, 'Active'),
-(3, 3, 'BTECH-ME',   'B.Tech Mechanical Engineering',                  4, 'Active'),
-(4, 1, 'MTECH-CSE',  'M.Tech Computer Science & Engineering',          2, 'Active'),
-(5, 4, 'MBA',        'Master of Business Administration',              2, 'Active'),
-(6, 2, 'MTECH-VLSI', 'M.Tech VLSI Design',                             2, 'Inactive');
+-- ------------------------------------------------------------
+-- 5. SEMESTERS
+-- ------------------------------------------------------------
+INSERT INTO semester (semester_id, semester_code, semester_name, academic_year, start_date, end_date, is_active) VALUES
+(1, 'FA2025', 'Fall 2025', '2025-2026', '2025-08-01', '2025-12-15', FALSE),
+(2, 'SP2026', 'Spring 2026', '2025-2026', '2026-01-05', '2026-05-20', TRUE),
+(3, 'FA2026', 'Fall 2026', '2026-2027', '2026-08-03', '2026-12-18', FALSE)
+ON DUPLICATE KEY UPDATE semester_name=VALUES(semester_name);
 
--- -----------------------------------------------------------------------------
--- 3. FACULTY
--- -----------------------------------------------------------------------------
-INSERT INTO faculty (faculty_id, dept_id, employee_code, full_name, email, designation) VALUES
-(1, 1, 'F1001', 'Dr. Anil Kumar Sharma',   'anil.sharma@scms.edu.in',        'Professor & Head'),
-(2, 1, 'F1002', 'Dr. Priya Raghavan',      'priya.raghavan@scms.edu.in',     'Associate Professor'),
-(3, 1, 'F1003', 'Mr. Rohit Verma',         'rohit.verma@scms.edu.in',        'Assistant Professor'),
-(4, 1, 'F1004', 'Dr. Sneha Kulkarni',      'sneha.kulkarni@scms.edu.in',     'Assistant Professor'),
-(5, 2, 'F2001', 'Dr. Venkatesh Iyer',      'venkatesh.iyer@scms.edu.in',     'Professor & Head'),
-(6, 2, 'F2002', 'Dr. Meenakshi Sundaram',  'meenakshi.sundaram@scms.edu.in', 'Associate Professor'),
-(7, 3, 'F3001', 'Dr. Harpreet Singh Gill', 'harpreet.gill@scms.edu.in',      'Professor & Head'),
-(8, 3, 'F3002', 'Mr. Arjun Nair',          'arjun.nair@scms.edu.in',         'Assistant Professor'),
-(9, 4, 'F4001', 'Dr. Kavita Deshpande',    'kavita.deshpande@scms.edu.in',   'Professor & Dean'),
-(10, 4, 'F4002', 'Dr. Sanjay Mehta',        'sanjay.mehta@scms.edu.in',       'Associate Professor'),
-(11, 5, 'F5001', 'Dr. Lakshmi Prasad',      'lakshmi.prasad@scms.edu.in',     'Associate Professor');
+-- ------------------------------------------------------------
+-- 6. SECTIONS (Includes 'Rhinos' section for Woxsen PBL)
+-- ------------------------------------------------------------
+INSERT INTO section (section_id, course_id, semester_id, faculty_id, section_name, capacity, room_no) VALUES
+(1, 1, 2, 1, 'Rhinos', 30, 'LH-101'),
+(2, 1, 2, 2, 'Tigers', 30, 'LH-102'),
+(3, 2, 2, 3, 'Rhinos', 30, 'LH-103'),
+(4, 2, 2, 4, 'Falcons', 30, 'LH-104'),
+(5, 3, 2, 1, 'Section-A', 25, 'CS-Lab1'),
+(6, 4, 2, 3, 'Section-A', 25, 'AI-Lab'),
+(7, 6, 2, 5, 'Section-A', 30, 'EC-201'),
+(8, 8, 2, 7, 'Section-A', 30, 'ME-301'),
+(9, 10, 2, 9, 'Section-A', 35, 'MB-101'),
+(10, 12, 2, 11, 'Section-A', 20, 'Studio-A')
+ON DUPLICATE KEY UPDATE section_name=VALUES(section_name);
 
--- -----------------------------------------------------------------------------
--- 4. COURSE
--- -----------------------------------------------------------------------------
-INSERT INTO course (course_id, dept_id, course_code, course_name, credits, course_type) VALUES
-(1, 1, 'CS201', 'Data Structures and Algorithms',      4, 'Core'),
-(2, 1, 'CS203', 'Database Management Systems',         4, 'Core'),
-(3, 1, 'CS205', 'Operating Systems',                   4, 'Core'),
-(4, 1, 'CS207', 'Database Management Systems Lab',     2, 'Lab'),
-(5, 1, 'CS301', 'Computer Networks',                   3, 'Core'),
-(6, 1, 'CS511', 'Advanced Machine Learning',           3, 'Elective'),
-(7, 2, 'EC201', 'Signals and Systems',                 4, 'Core'),
-(8, 2, 'EC203', 'Digital Electronics',                 3, 'Core'),
-(9, 3, 'ME201', 'Engineering Thermodynamics',          4, 'Core'),
-(10, 3, 'ME203', 'Engineering Mechanics',               3, 'Core'),
-(11, 4, 'MB501', 'Financial Accounting for Managers',   3, 'Core'),
-(12, 4, 'MB503', 'Marketing Management',                3, 'Core'),
-(13, 5, 'MA201', 'Probability and Statistics',          3, 'Core'),
-(14, 4, 'MB601', 'Strategic Management',                3, 'Core');
+-- ------------------------------------------------------------
+-- 7. STUDENTS (25 Fictional Students, including Vardan Desai)
+-- ------------------------------------------------------------
+INSERT INTO student (student_id, reg_number, programme_id, first_name, last_name, email, phone, dob, gender, admission_date, current_semester, status) VALUES
+(1, '25WU0104029', 1, 'Vardan', 'Desai', 'vardan.desai@woxsen.edu.in', '9848011001', '2004-05-14', 'Male', '2024-07-20', 2, 'Active'),
+(2, '25WU0104001', 1, 'Aarav', 'Gupta', 'aarav.gupta@woxsen.edu.in', '9848011002', '2004-03-12', 'Male', '2024-07-20', 2, 'Active'),
+(3, '25WU0104002', 1, 'Aditi', 'Verma', 'aditi.verma@woxsen.edu.in', '9848011003', '2004-08-25', 'Female', '2024-07-20', 2, 'Active'),
+(4, '25WU0104003', 1, 'Aniruddh', 'Rao', 'aniruddh.rao@woxsen.edu.in', '9848011004', '2004-11-09', 'Male', '2024-07-20', 2, 'Active'),
+(5, '25WU0104004', 1, 'Divya', 'Nath', 'divya.nath@woxsen.edu.in', '9848011005', '2004-01-30', 'Female', '2024-07-20', 2, 'Active'),
+(6, '25WU0104005', 1, 'Ishaan', 'Joshi', 'ishaan.joshi@woxsen.edu.in', '9848011006', '2004-06-18', 'Male', '2024-07-20', 2, 'Active'),
+(7, '25WU0104006', 1, 'Kavya', 'Reddy', 'kavya.reddy@woxsen.edu.in', '9848011007', '2004-09-03', 'Female', '2024-07-20', 2, 'Active'),
+(8, '25WU0104007', 1, 'Manish', 'Kumar', 'manish.kumar@woxsen.edu.in', '9848011008', '2004-12-14', 'Male', '2024-07-20', 2, 'Active'),
+(9, '25WU0104008', 2, 'Neha', 'Bhatia', 'neha.bhatia@woxsen.edu.in', '9848011009', '2004-04-21', 'Female', '2024-07-21', 2, 'Active'),
+(10, '25WU0104009', 2, 'Pranav', 'Shah', 'pranav.shah@woxsen.edu.in', '9848011010', '2004-07-11', 'Male', '2024-07-21', 2, 'Active'),
+(11, '25WU0104010', 2, 'Priya', 'Sundaram', 'priya.sundaram@woxsen.edu.in', '9848011011', '2004-10-05', 'Female', '2024-07-21', 2, 'Active'),
+(12, '25WU0104011', 2, 'Rahul', 'Nair', 'rahul.nair@woxsen.edu.in', '9848011012', '2004-02-17', 'Male', '2024-07-21', 2, 'Active'),
+(13, '25WU0104012', 3, 'Rhea', 'Pillai', 'rhea.pillai@woxsen.edu.in', '9848011013', '2004-05-29', 'Female', '2024-07-22', 2, 'Active'),
+(14, '25WU0104013', 3, 'Rohit', 'Chopra', 'rohit.chopra@woxsen.edu.in', '9848011014', '2004-08-16', 'Male', '2024-07-22', 2, 'Active'),
+(15, '25WU0104014', 3, 'Sai', 'Kiran', 'sai.kiran@woxsen.edu.in', '9848011015', '2004-11-23', 'Male', '2024-07-22', 2, 'Active'),
+(16, '25WU0104015', 3, 'Sakshi', 'Agarwal', 'sakshi.agarwal@woxsen.edu.in', '9848011016', '2004-03-08', 'Female', '2024-07-22', 2, 'Active'),
+(17, '25WU0104016', 4, 'Siddharth', 'Mehta', 'siddharth.mehta@woxsen.edu.in', '9848011017', '2004-06-25', 'Male', '2024-07-23', 2, 'Active'),
+(18, '25WU0104017', 4, 'Sneha', 'Roy', 'sneha.roy@woxsen.edu.in', '9848011018', '2004-09-19', 'Female', '2024-07-23', 2, 'Active'),
+(19, '25WU0104018', 4, 'Tanvi', 'Pandey', 'tanvi.pandey@woxsen.edu.in', '9848011019', '2004-12-31', 'Female', '2024-07-23', 2, 'Active'),
+(20, '25WU0104019', 4, 'Utkarsh', 'Saxena', 'utkarsh.saxena@woxsen.edu.in', '9848011020', '2004-04-14', 'Male', '2024-07-23', 2, 'Active'),
+(21, '25WU0104020', 5, 'Varun', 'Teja', 'varun.teja@woxsen.edu.in', '9848011021', '2004-07-02', 'Male', '2024-07-24', 2, 'Active'),
+(22, '25WU0104021', 5, 'Yash', 'Singhania', 'yash.singhania@woxsen.edu.in', '9848011022', '2004-10-18', 'Male', '2024-07-24', 2, 'Active'),
+(23, '25WU0104022', 6, 'Zara', 'Khan', 'zara.khan@woxsen.edu.in', '9848011023', '2004-01-12', 'Female', '2024-07-24', 2, 'Active'),
+(24, '25WU0104023', 6, 'Ayaan', 'Ali', 'ayaan.ali@woxsen.edu.in', '9848011024', '2004-05-06', 'Male', '2024-07-24', 2, 'Active'),
+(25, '25WU0104024', 1, 'Ritvik', 'Sen', 'ritvik.sen@woxsen.edu.in', '9848011025', '2003-08-14', 'Male', '2023-07-20', 4, 'Active')
+ON DUPLICATE KEY UPDATE first_name=VALUES(first_name);
 
--- -----------------------------------------------------------------------------
--- 5. SEMESTER
--- -----------------------------------------------------------------------------
-INSERT INTO semester (semester_id, academic_year, term, start_date, end_date) VALUES
-(1, '2025-26', 'Odd',  '2025-07-21', '2025-11-29'),
-(2, '2025-26', 'Even', '2026-01-05', '2026-05-16'),
-(3, '2026-27', 'Odd',  '2026-07-20', '2026-12-05'),
-(4, '2026-27', 'Even', '2027-01-04', '2027-05-15');
+-- ------------------------------------------------------------
+-- 8. GUARDIANS (Corresponding Guardian Records)
+-- ------------------------------------------------------------
+INSERT INTO guardian (guardian_id, student_id, guardian_name, relationship, phone, email, address) VALUES
+(1, 1, 'Sanjay Desai', 'Father', '9988001001', 'sanjay.desai@gmail.com', 'Plot 45, Jubilee Hills, Hyderabad'),
+(2, 2, 'Ramesh Gupta', 'Father', '9988001002', 'ramesh.gupta@gmail.com', 'Flat 302, Gachibowli, Hyderabad'),
+(3, 3, 'Sunita Verma', 'Mother', '9988001003', 'sunita.verma@gmail.com', 'B-12, Kondapur, Hyderabad'),
+(4, 4, 'Kishore Rao', 'Father', '9988001004', 'kishore.rao@gmail.com', 'H-90, Madhapur, Hyderabad'),
+(5, 5, 'Anuradha Nath', 'Mother', '9988001005', 'anuradha.nath@gmail.com', 'Plot 10, Banjara Hills, Hyderabad'),
+(6, 6, 'Prakash Joshi', 'Father', '9988001006', 'prakash.joshi@gmail.com', 'Flat 101, Hitec City, Hyderabad'),
+(7, 7, 'Venkat Reddy', 'Father', '9988001007', 'venkat.reddy@gmail.com', 'Road 12, Banjara Hills, Hyderabad'),
+(8, 8, 'Ajay Kumar', 'Father', '9988001008', 'ajay.kumar@gmail.com', 'Sector 4, Begumpet, Hyderabad'),
+(9, 9, 'Mohan Bhatia', 'Father', '9988001009', 'mohan.bhatia@gmail.com', 'Flat 501, Somajiguda, Hyderabad'),
+(10, 10, 'Nitin Shah', 'Father', '9988001010', 'nitin.shah@gmail.com', 'C-15, Secunderabad'),
+(11, 25, 'Arindam Sen', 'Father', '9988001025', 'arindam.sen@gmail.com', 'Plot 88, Kothaguda, Hyderabad')
+ON DUPLICATE KEY UPDATE guardian_name=VALUES(guardian_name);
 
--- -----------------------------------------------------------------------------
--- 6. SECTION
--- -----------------------------------------------------------------------------
-INSERT INTO section (section_id, course_id, faculty_id, semester_id, section_code, room_no, capacity) VALUES
--- Past Semester Sections
-(1, 13, 11, 1, 'A',  'LH-101',   60),
-(2, 11,  9, 1, 'A',  'SOM-201',  60),
-(3,  1,  1, 2, 'A',  'CSE-201',  60),
-(4,  8,  6, 2, 'A',  'ECE-104',  60),
-(5, 10,  8, 2, 'A',  'ME-102',   60),
-(6, 12, 10, 2, 'A',  'SOM-202',  60),
-(7,  6,  1, 2, 'A',  'CSE-LAB3', 15),
--- Current Semester Sections (2026-27 Odd)
-(8,  2,  2, 3, 'A',  'CSE-301',   6),   -- CS203 Section A (Seats: 6)
-(9,  2,  3, 3, 'B',  'CSE-302',   3),   -- CS203 Section B (Capacity: 3, fully occupied)
-(10, 3,  4, 3, 'A',  'CSE-303',  60),
-(11, 4,  2, 3, 'L1', 'CSE-LAB2', 30),
-(12, 7,  5, 3, 'A',  'ECE-201',  60),
-(13, 9,  7, 3, 'A',  'ME-101',   60),
-(14, 14, 9, 3, 'A',  'SOM-301',  60),
-(15, 5,  3, 3, 'A',  'CSE-304',  40);
+-- ------------------------------------------------------------
+-- 9. REGISTRATIONS (Students enrolled in Course / Semester / Section)
+-- ------------------------------------------------------------
+INSERT INTO registration (registration_id, student_id, course_id, semester_id, section_id, registration_date, status) VALUES
+-- Vardan Desai (ID: 1)
+(1, 1, 1, 2, 1, '2026-01-08', 'Enrolled'),
+(2, 1, 2, 2, 3, '2026-01-08', 'Enrolled'),
+(3, 1, 3, 2, 5, '2026-01-08', 'Enrolled'),
+-- Aarav Gupta (ID: 2)
+(4, 2, 1, 2, 1, '2026-01-08', 'Enrolled'),
+(5, 2, 2, 2, 3, '2026-01-08', 'Enrolled'),
+-- Aditi Verma (ID: 3)
+(6, 3, 1, 2, 1, '2026-01-08', 'Enrolled'),
+(7, 3, 2, 2, 3, '2026-01-08', 'Enrolled'),
+-- Aniruddh Rao (ID: 4)
+(8, 4, 1, 2, 1, '2026-01-09', 'Enrolled'),
+(9, 4, 2, 2, 3, '2026-01-09', 'Enrolled'),
+-- Divya Nath (ID: 5)
+(10, 5, 1, 2, 1, '2026-01-09', 'Enrolled'),
+-- Ishaan Joshi (ID: 6)
+(11, 6, 1, 2, 2, '2026-01-09', 'Enrolled'),
+-- Kavya Reddy (ID: 7)
+(12, 7, 1, 2, 2, '2026-01-10', 'Enrolled'),
+-- Manish Kumar (ID: 8)
+(13, 8, 1, 2, 2, '2026-01-10', 'Enrolled'),
+-- Neha Bhatia (ID: 9)
+(14, 9, 2, 2, 4, '2026-01-10', 'Enrolled'),
+-- Pranav Shah (ID: 10)
+(15, 10, 2, 2, 4, '2026-01-10', 'Enrolled')
+ON DUPLICATE KEY UPDATE status=VALUES(status);
 
--- -----------------------------------------------------------------------------
--- 7. STUDENT
--- -----------------------------------------------------------------------------
-INSERT INTO student (student_id, programme_id, reg_no, full_name, dob, email, phone, admission_date, status) VALUES
-(1,  1, '24BCS001', 'Aarav Mehta',          '2006-03-14', 'aarav.mehta@students.scms.edu.in',       '9876543201', '2024-07-29', 'Active'),
-(2,  1, '24BCS002', 'Ananya Iyer',          '2006-07-22', 'ananya.iyer@students.scms.edu.in',       '9876543202', '2024-07-29', 'Active'),
-(3,  1, '24BCS003', 'Rohan Deshmukh',       '2005-11-02', 'rohan.deshmukh@students.scms.edu.in',    '9876543203', '2024-07-29', 'Active'),
-(4,  1, '24BCS004', 'Meera Nair',           '2006-01-30', 'meera.nair@students.scms.edu.in',        '9876543204', '2024-07-29', 'Active'),
-(5,  1, '24BCS005', 'Karthik Reddy',        '2005-09-18', 'karthik.reddy@students.scms.edu.in',     '9876543205', '2024-07-29', 'Active'),
-(6,  1, '24BCS006', 'Sneha Patil',          '2006-05-09', 'sneha.patil@students.scms.edu.in',       '9876543206', '2024-07-29', 'Active'),
-(7,  1, '24BCS007', 'Vikram Singh Rathore', '2005-12-25', 'vikram.rathore@students.scms.edu.in',    '9876543207', '2024-07-29', 'Active'),
-(8,  1, '24BCS008', 'Ishita Banerjee',      '2006-08-11', 'ishita.banerjee@students.scms.edu.in',   '9876543208', '2024-07-29', 'Active'),
-(9,  2, '24BEC001', 'Aditya Kulkarni',      '2006-02-17', 'aditya.kulkarni@students.scms.edu.in',   '9876543209', '2024-07-29', 'Active'),
-(10, 2, '24BEC002', 'Pooja Menon',          '2006-04-03', 'pooja.menon@students.scms.edu.in',       '9876543210', '2024-07-29', 'Active'),
-(11, 2, '24BEC003', 'Siddharth Joshi',      '2005-10-27', 'siddharth.joshi@students.scms.edu.in',   '9876543211', '2024-07-29', 'Active'),
-(12, 3, '24BME001', 'Harsh Vardhan Yadav',  '2005-06-21', 'harsh.yadav@students.scms.edu.in',       '9876543212', '2024-07-29', 'Active'),
-(13, 3, '24BME002', 'Neha Gupta',           '2006-09-05', 'neha.gupta@students.scms.edu.in',        '9876543213', '2024-07-29', 'Active'),
-(14, 3, '24BME003', 'Manish Tiwari',        '2005-08-14', 'manish.tiwari@students.scms.edu.in',     '9876543214', '2024-07-29', 'Withdrawn'),
-(15, 5, '25MBA001', 'Riya Kapoor',          '2002-12-01', 'riya.kapoor@students.scms.edu.in',       '9876543215', '2025-07-14', 'Active'),
-(16, 5, '25MBA002', 'Arjun Malhotra',       '2001-03-19', 'arjun.malhotra@students.scms.edu.in',    '9876543216', '2025-07-14', 'Active'),
-(17, 4, '25MCS001', 'Divya Krishnan',       '2002-07-08', 'divya.krishnan@students.scms.edu.in',    '9876543217', '2025-07-14', 'Active');
+-- ------------------------------------------------------------
+-- 10. ATTENDANCE RECORDS (Past dates in Spring 2026)
+-- ------------------------------------------------------------
+INSERT INTO attendance (attendance_id, registration_id, attendance_date, status, remarks) VALUES
+-- Vardan Desai in DBMS (Reg ID: 1)
+(1, 1, '2026-01-15', 'Present', 'Regular class lecture'),
+(2, 1, '2026-01-22', 'Present', 'ER modeling hands-on'),
+(3, 1, '2026-01-29', 'Present', 'Normalization lab session'),
+(4, 1, '2026-02-05', 'Present', 'SQL Constraints workshop'),
+(5, 1, '2026-02-12', 'Absent',  'Medical leave notified'),
+(6, 1, '2026-02-19', 'Present', 'Indexing and performance lab'),
+-- Aarav Gupta in DBMS (Reg ID: 4)
+(7, 4, '2026-01-15', 'Present', 'Regular class lecture'),
+(8, 4, '2026-01-22', 'Absent',  'Unexcused absence'),
+(9, 4, '2026-01-29', 'Present', 'Normalization lab session'),
+(10, 4, '2026-02-05', 'Present', 'SQL Constraints workshop'),
+-- Aditi Verma in DBMS (Reg ID: 6)
+(11, 6, '2026-01-15', 'Present', 'Regular class lecture'),
+(12, 6, '2026-01-22', 'Present', 'ER modeling hands-on'),
+(13, 6, '2026-01-29', 'Present', 'Normalization lab session'),
+(14, 6, '2026-02-05', 'Present', 'SQL Constraints workshop'),
+-- Vardan Desai in DSA (Reg ID: 2)
+(15, 2, '2026-01-16', 'Present', 'Trees traversal algorithms'),
+(16, 2, '2026-01-23', 'Present', 'Heap data structure'),
+(17, 2, '2026-01-30', 'Present', 'Graph algorithms BFS/DFS')
+ON DUPLICATE KEY UPDATE status=VALUES(status);
 
--- -----------------------------------------------------------------------------
--- 8. GUARDIAN
--- -----------------------------------------------------------------------------
-INSERT INTO guardian (student_id, name, relation, phone, email, address) VALUES
-(1,  'Rajesh Mehta',          'Father',   '9822011001', 'rajesh.mehta@gmail.com',     '14, Shanti Nagar, Pune, Maharashtra 411038'),
-(2,  'Lalitha Iyer',          'Mother',   '9822011002', 'lalitha.iyer@gmail.com',     '7, T. Nagar, Chennai, Tamil Nadu 600017'),
-(3,  'Suresh Deshmukh',       'Father',   '9822011003', NULL,                         'Plot 22, Dhantoli, Nagpur, Maharashtra 440012'),
-(4,  'Gopalakrishnan Nair',   'Father',   '9822011004', 'gk.nair@yahoo.co.in',        'Kowdiar, Thiruvananthapuram, Kerala 695003'),
-(5,  'Srinivas Reddy',        'Father',   '9822011005', 'srinivas.reddy@gmail.com',   'Banjara Hills, Hyderabad, Telangana 500034'),
-(6,  'Vandana Patil',         'Mother',   '9822011006', NULL,                         'Kothrud, Pune, Maharashtra 411029'),
-(7,  'Mahendra Singh Rathore', 'Father',  '9822011007', 'ms.rathore@gmail.com',       'Shastri Nagar, Jodhpur, Rajasthan 342003'),
-(8,  'Subhash Banerjee',      'Father',   '9822011008', 'subhash.banerjee@gmail.com', 'Salt Lake Sector II, Kolkata, West Bengal 700091'),
-(9,  'Shubhangi Kulkarni',    'Mother',   '9822011009', NULL,                         'Vishrambag, Sangli, Maharashtra 416415'),
-(10, 'Ravi Menon',            'Father',   '9822011010', 'ravi.menon@gmail.com',       'Panampilly Nagar, Kochi, Kerala 682036'),
-(11, 'Prakash Joshi',         'Father',   '9822011011', NULL,                         'Navrangpura, Ahmedabad, Gujarat 380009'),
-(12, 'Ramesh Yadav',          'Father',   '9822011012', NULL,                         'Gomti Nagar, Lucknow, Uttar Pradesh 226010'),
-(13, 'Anita Gupta',           'Mother',   '9822011013', 'anita.gupta@gmail.com',      'Malviya Nagar, Jaipur, Rajasthan 302017'),
-(14, 'Om Prakash Tiwari',     'Father',   '9822011014', NULL,                         'Civil Lines, Prayagraj, Uttar Pradesh 211001'),
-(15, 'Sunita Kapoor',         'Mother',   '9822011015', 'sunita.kapoor@gmail.com',    'Rajouri Garden, New Delhi 110027'),
-(16, 'Vivek Malhotra',        'Father',   '9822011016', 'vivek.malhotra@gmail.com',   'Sector 17, Chandigarh 160017'),
-(17, 'Krishnan Ramaswamy',    'Father',   '9822011017', NULL,                         'Anna Nagar, Chennai, Tamil Nadu 600040');
+-- ------------------------------------------------------------
+-- 11. EXAMINATIONS
+-- ------------------------------------------------------------
+INSERT INTO examination (exam_id, registration_id, exam_type, exam_date, max_marks, marks_obtained) VALUES
+(1, 1, 'Mid-Term', '2026-02-20', 100.00, 92.50), -- Vardan DBMS Mid-Term (A+ -> 10)
+(2, 1, 'Quiz',     '2026-02-10', 25.00,  23.00), -- Vardan DBMS Quiz (92% -> A+ -> 10)
+(3, 4, 'Mid-Term', '2026-02-20', 100.00, 84.00), -- Aarav DBMS Mid-Term (A -> 9)
+(4, 6, 'Mid-Term', '2026-02-20', 100.00, 76.50), -- Aditi DBMS Mid-Term (B+ -> 8)
+(5, 8, 'Mid-Term', '2026-02-20', 100.00, 65.00), -- Aniruddh DBMS Mid-Term (B -> 7)
+(6, 10, 'Mid-Term', '2026-02-20', 100.00, 54.00),-- Divya DBMS Mid-Term (C -> 6)
+(7, 2, 'Mid-Term', '2026-02-22', 100.00, 88.00), -- Vardan DSA Mid-Term (A -> 9)
+(8, 5, 'Mid-Term', '2026-02-22', 100.00, 42.00)  -- Aarav DSA Mid-Term (D -> 5)
+ON DUPLICATE KEY UPDATE marks_obtained=VALUES(marks_obtained);
 
--- -----------------------------------------------------------------------------
--- 9. REGISTRATION
--- -----------------------------------------------------------------------------
-INSERT INTO registration (student_id, section_id, registered_on, status) VALUES
--- Past Semester Completed Registrations
-(1, 1, '2025-07-16', 'Completed'), (2, 1, '2025-07-16', 'Completed'),
-(3, 1, '2025-07-16', 'Completed'), (4, 1, '2025-07-16', 'Completed'),
-(1, 3, '2026-01-02', 'Completed'), (2, 3, '2026-01-02', 'Completed'),
-(3, 3, '2026-01-02', 'Completed'), (4, 3, '2026-01-02', 'Completed'),
--- Current Semester: CS203 Sec A (Seats: 6, Enrolled: 5) -> 1 seat available
-(1, 8, '2026-07-15', 'Registered'), (2, 8, '2026-07-15', 'Registered'),
-(3, 8, '2026-07-15', 'Registered'), (4, 8, '2026-07-15', 'Registered'),
-(5, 8, '2026-07-15', 'Registered'),
--- Current Semester: CS203 Sec B (Capacity: 3, Enrolled: 3) -> FULL
-(6, 9, '2026-07-15', 'Registered'), (7, 9, '2026-07-15', 'Registered'),
-(8, 9, '2026-07-15', 'Registered'),
--- Current Semester: CS205 Sec A (Operating Systems)
-(1, 10, '2026-07-15', 'Registered'), (2, 10, '2026-07-15', 'Registered'),
-(3, 10, '2026-07-15', 'Registered'), (4, 10, '2026-07-15', 'Registered'),
-(5, 10, '2026-07-15', 'Registered'),
--- Current Semester: CS207 Sec L1 (DBMS Lab)
-(1, 11, '2026-07-15', 'Registered'), (2, 11, '2026-07-15', 'Registered'),
-(3, 11, '2026-07-15', 'Registered'), (4, 11, '2026-07-15', 'Registered');
+-- ------------------------------------------------------------
+-- 12. GRADES (Calculated matching trigger specification)
+-- ------------------------------------------------------------
+INSERT INTO grade (grade_id, exam_id, percentage, letter_grade, grade_point, remarks) VALUES
+(1, 1, 92.50, 'A+', 10.0, 'Outstanding'),
+(2, 2, 92.00, 'A+', 10.0, 'Outstanding'),
+(3, 3, 84.00, 'A',   9.0, 'Excellent'),
+(4, 4, 76.50, 'B+',  8.0, 'Very Good'),
+(5, 5, 65.00, 'B',   7.0, 'Good'),
+(6, 6, 54.00, 'C',   6.0, 'Average'),
+(7, 7, 88.00, 'A',   9.0, 'Excellent'),
+(8, 8, 42.00, 'D',   5.0, 'Pass')
+ON DUPLICATE KEY UPDATE letter_grade=VALUES(letter_grade);
 
--- -----------------------------------------------------------------------------
--- 10. ATTENDANCE
--- -----------------------------------------------------------------------------
-INSERT INTO attendance (registration_id, attendance_date, status) VALUES
--- Registrations in CS203 Sec A
-(9,  '2026-07-22', 'Present'), (9,  '2026-07-29', 'Present'), (9,  '2026-08-05', 'Present'), (9,  '2026-08-12', 'Present'),
-(10, '2026-07-22', 'Present'), (10, '2026-07-29', 'Present'), (10, '2026-08-05', 'Present'), (10, '2026-08-12', 'Present'),
--- Rohan Deshmukh (Low attendance / Shortage demo)
-(11, '2026-07-22', 'Absent'),  (11, '2026-07-29', 'Absent'),  (11, '2026-08-05', 'Absent'),  (11, '2026-08-12', 'Present'),
--- Meera Nair
-(12, '2026-07-22', 'Present'), (12, '2026-07-29', 'Late'),    (12, '2026-08-05', 'Present'), (12, '2026-08-12', 'Present'),
-(13, '2026-07-22', 'Present'), (13, '2026-07-29', 'Present'), (13, '2026-08-05', 'Present'), (13, '2026-08-12', 'Present');
+-- ------------------------------------------------------------
+-- 13. FEE BILLS
+-- ------------------------------------------------------------
+INSERT INTO fee_bill (bill_id, bill_number, student_id, semester_id, fee_type, amount, due_date, issue_date, status) VALUES
+(1, 'BILL-2026-001', 1, 2, 'Tuition Fee', 150000.00, '2026-02-28', '2026-01-05', 'Paid'),
+(2, 'BILL-2026-002', 1, 2, 'Examination Fee', 5000.00, '2026-03-15', '2026-02-01', 'Unpaid'),
+(3, 'BILL-2026-003', 2, 2, 'Tuition Fee', 150000.00, '2026-02-28', '2026-01-05', 'Partially Paid'),
+(4, 'BILL-2026-004', 3, 2, 'Tuition Fee', 150000.00, '2026-02-28', '2026-01-05', 'Unpaid'),
+(5, 'BILL-2026-005', 4, 2, 'Tuition Fee', 150000.00, '2026-02-28', '2026-01-05', 'Paid'),
+(6, 'BILL-2026-006', 9, 2, 'Tuition Fee', 140000.00, '2026-02-28', '2026-01-05', 'Partially Paid'),
+(7, 'BILL-2026-007', 13, 2, 'Tuition Fee', 135000.00, '2026-02-28', '2026-01-05', 'Paid')
+ON DUPLICATE KEY UPDATE status=VALUES(status);
 
--- -----------------------------------------------------------------------------
--- 11. EXAMINATION
--- (The deterministic grade trigger will automatically insert matching rows into grade)
--- -----------------------------------------------------------------------------
-INSERT INTO examination (registration_id, exam_type, exam_date, max_marks, marks) VALUES
-(9,  'Mid-Term', '2026-09-15', 100.00, 92.50),  -- Will trigger Grade A+ (10.0)
-(10, 'Mid-Term', '2026-09-15', 100.00, 84.00),  -- Will trigger Grade A (9.0)
-(11, 'Mid-Term', '2026-09-15', 100.00, 36.00),  -- Will trigger Grade F (0.0)
-(12, 'Mid-Term', '2026-09-15', 100.00, 78.50),  -- Will trigger Grade B+ (8.0)
-(13, 'Mid-Term', '2026-09-15', 100.00, 65.00);  -- Will trigger Grade B (7.0)
+-- ------------------------------------------------------------
+-- 14. PAYMENTS
+-- ------------------------------------------------------------
+INSERT INTO payment (payment_id, receipt_number, bill_id, amount_paid, payment_date, payment_mode, transaction_ref) VALUES
+(1, 'REC-2026-001', 1, 150000.00, '2026-01-18', 'Online / UPI', 'UPI/2026/88392101'),
+(2, 'REC-2026-002', 3, 100000.00, '2026-01-20', 'Net Banking', 'NEFT/HDFC/992381'),
+(3, 'REC-2026-003', 5, 150000.00, '2026-01-25', 'Credit/Debit Card', 'CARD/POS/449102'),
+(4, 'REC-2026-004', 6, 70000.00,  '2026-02-02', 'Online / UPI', 'UPI/2026/1129304'),
+(5, 'REC-2026-005', 7, 135000.00, '2026-01-30', 'Net Banking', 'NEFT/ICICI/550192')
+ON DUPLICATE KEY UPDATE amount_paid=VALUES(amount_paid);
 
--- -----------------------------------------------------------------------------
--- 13. FEE_BILL
--- -----------------------------------------------------------------------------
-INSERT INTO fee_bill (bill_id, student_id, semester_id, bill_date, amount_due, due_date, status) VALUES
-(1, 1, 3, '2026-07-10', 92500.00, '2026-08-15', 'Paid'),
-(2, 2, 3, '2026-07-10', 92500.00, '2026-08-15', 'Paid'),
-(3, 3, 3, '2026-07-10', 92500.00, '2026-08-15', 'Unpaid'),
-(4, 4, 3, '2026-07-10', 92500.00, '2026-08-15', 'Partially Paid'), -- ₹50,000 paid; ₹42,500 balance
-(5, 5, 3, '2026-07-10', 92500.00, '2026-08-15', 'Unpaid');
-
--- -----------------------------------------------------------------------------
--- 14. PAYMENT
--- -----------------------------------------------------------------------------
-INSERT INTO payment (bill_id, payment_date, amount_paid, payment_mode, reference_no) VALUES
-(1, '2026-07-15', 92500.00, 'UPI',  'UPI-2026-07-001'),
-(2, '2026-07-18', 92500.00, 'NEFT', 'NEFT-2026-07-002'),
-(4, '2026-07-24', 50000.00, 'Card', 'CRD-2026-07-003');
-
--- -----------------------------------------------------------------------------
--- AUTHENTICATION: user_account
--- Password for all accounts is 'Demo@12345'
--- Hash generated via bcrypt ($2a$10$w0s6hN37WnC7uFkKj.H06.cSmF0Z0j8Z0m4h7Y/V7Q2l/tF9p.t7e)
--- -----------------------------------------------------------------------------
-INSERT INTO user_account (email, password_hash, role, full_name, student_id, faculty_id) VALUES
-('registrar@scms.edu.in',           '$2a$10$w0s6hN37WnC7uFkKj.H06.cSmF0Z0j8Z0m4h7Y/V7Q2l/tF9p.t7e', 'admin',    'Dr. Ramesh Iyengar', NULL, NULL),
-('priya.raghavan@scms.edu.in',      '$2a$10$w0s6hN37WnC7uFkKj.H06.cSmF0Z0j8Z0m4h7Y/V7Q2l/tF9p.t7e', 'faculty',  'Dr. Priya Raghavan', NULL, 2),
-('accounts@scms.edu.in',            '$2a$10$w0s6hN37WnC7uFkKj.H06.cSmF0Z0j8Z0m4h7Y/V7Q2l/tF9p.t7e', 'accounts', 'Mr. Suresh Babu',    NULL, NULL),
-('meera.nair@students.scms.edu.in', '$2a$10$w0s6hN37WnC7uFkKj.H06.cSmF0Z0j8Z0m4h7Y/V7Q2l/tF9p.t7e', 'student',  'Meera Nair',         4,    NULL);
+-- ------------------------------------------------------------
+-- 15. USER ACCOUNTS (Hashed with bcrypt: admin123, faculty123, student123)
+-- ------------------------------------------------------------
+INSERT INTO user_account (user_id, username, password_hash, role, reference_id, email, is_active) VALUES
+(1, 'admin', '$2b$12$.bJACED4NhdjMNIpSV3.feVHl.jFN08s7gEnW7ve09eJPY2TxEBHW', 'Admin', NULL, 'admin@woxsen.edu.in', TRUE),
+(2, 'faculty', '$2b$12$.oulvNmD2XHYDMz1E3YGr.8JHKbsIzdvIG9Ke8FI3wcR6FuFzt4JC', 'Faculty', 1, 'kavitha.reddy@woxsen.edu.in', TRUE),
+(3, 'student', '$2b$12$Z0lqnkoMkH97IX6vBQRGxep2XLcUJCjLus9kTei2ARKsEau15iuGC', 'Student', 1, 'vardan.desai@woxsen.edu.in', TRUE),
+(4, 'vardan', '$2b$12$Z0lqnkoMkH97IX6vBQRGxep2XLcUJCjLus9kTei2ARKsEau15iuGC', 'Student', 1, 'vardan.direct@woxsen.edu.in', TRUE)
+ON DUPLICATE KEY UPDATE username=VALUES(username);

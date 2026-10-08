@@ -1,155 +1,183 @@
--- =============================================================================
--- SCMS — Database Triggers (MySQL 8.0+)
--- File : database/triggers.sql
--- Description : Enforces core business rules inside the MySQL database:
---   1. Section Capacity & Duplicate Course Checks (BEFORE INSERT ON registration)
---   2. Attendance Calendar & Dropped Registration Validation (BEFORE INSERT ON attendance)
---   3. Overpayment Prevention & Balance Enforcement (BEFORE INSERT ON payment)
---   4. Deterministic Examination Grading (AFTER INSERT/UPDATE ON examination)
---   5. Fee Bill Status Synchronization (AFTER INSERT ON payment)
--- =============================================================================
+-- ============================================================
+-- Student & College Management System (SCMS)
+-- Database: scms_db
+-- Author: Vardan Desai (25WU0104029) | Woxsen University
+-- Triggers for Business Logic Enforcement
+-- ============================================================
 
 USE scms_db;
 
 DELIMITER $$
 
--- -----------------------------------------------------------------------------
--- 1. REGISTRATION CAPACITY & DUPLICATE ENROLMENT TRIGGER
--- -----------------------------------------------------------------------------
+-- ------------------------------------------------------------
+-- TRIGGER 1: REGISTRATION VALIDATION (BEFORE INSERT)
+-- Rules:
+-- 1. Student must exist and be in 'Active' status
+-- 2. Prevent duplicate active enrollment for the same course & semester
+-- 3. Section capacity must not be exceeded
+-- ------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_registration_before_insert$$
 CREATE TRIGGER trg_registration_before_insert
 BEFORE INSERT ON registration
 FOR EACH ROW
 BEGIN
+    DECLARE v_student_status VARCHAR(20);
     DECLARE v_capacity INT;
-    DECLARE v_current_taken INT;
-    DECLARE v_course_id INT;
-    DECLARE v_semester_id INT;
-    DECLARE v_student_status VARCHAR(15);
-    DECLARE v_duplicate_in_course INT;
+    DECLARE v_enrolled_count INT;
+    DECLARE v_duplicate_count INT;
 
-    -- Check if student is active
-    SELECT status INTO v_student_status FROM student WHERE student_id = NEW.student_id;
-    IF v_student_status != 'Active' THEN
+    -- 1. Check student existence and status
+    SELECT status INTO v_student_status
+    FROM student
+    WHERE student_id = NEW.student_id;
+
+    IF v_student_status IS NULL THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Registration Blocked: Only Active students can be enrolled in sections.';
+        SET MESSAGE_TEXT = 'Registration rejected: Student does not exist.';
+    ELSEIF v_student_status <> 'Active' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Registration rejected: Only Active students can register for courses.';
     END IF;
 
-    -- Retrieve section capacity, course, and semester
-    SELECT capacity, course_id, semester_id 
-    INTO v_capacity, v_course_id, v_semester_id
-    FROM section 
+    -- 2. Check for duplicate registration in this course and semester
+    SELECT COUNT(*) INTO v_duplicate_count
+    FROM registration
+    WHERE student_id = NEW.student_id
+      AND course_id = NEW.course_id
+      AND semester_id = NEW.semester_id
+      AND status <> 'Dropped';
+
+    IF v_duplicate_count > 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Registration rejected: Student is already registered for this course in the selected semester.';
+    END IF;
+
+    -- 3. Check section capacity
+    SELECT capacity INTO v_capacity
+    FROM section
     WHERE section_id = NEW.section_id;
 
-    -- Check if student is already enrolled in another section of the same course in this semester
-    SELECT COUNT(*) INTO v_duplicate_in_course
-    FROM registration r
-    JOIN section s ON s.section_id = r.section_id
-    WHERE r.student_id = NEW.student_id
-      AND s.course_id = v_course_id
-      AND s.semester_id = v_semester_id
-      AND r.status != 'Dropped';
-
-    IF v_duplicate_in_course > 0 THEN
+    IF v_capacity IS NULL THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Registration Failed: Student is already registered in another section for this course in the same semester.';
+        SET MESSAGE_TEXT = 'Registration rejected: Specified section does not exist.';
     END IF;
 
-    -- Check current occupancy
-    SELECT COUNT(*) INTO v_current_taken
+    SELECT COUNT(*) INTO v_enrolled_count
     FROM registration
     WHERE section_id = NEW.section_id
-      AND status != 'Dropped';
+      AND status = 'Enrolled';
 
-    IF v_current_taken >= v_capacity THEN
+    IF v_enrolled_count >= v_capacity THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Registration Blocked: This section has reached maximum student capacity.';
+        SET MESSAGE_TEXT = 'Registration rejected: Section capacity has been reached.';
     END IF;
 END$$
 
--- -----------------------------------------------------------------------------
--- 2. ATTENDANCE VALIDATION TRIGGER
--- -----------------------------------------------------------------------------
+
+-- ------------------------------------------------------------
+-- TRIGGER 2: ATTENDANCE VALIDATION (BEFORE INSERT)
+-- Rules:
+-- 1. Registration must exist and must not be 'Dropped'
+-- 2. Future attendance dates are rejected
+-- ------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_attendance_before_insert$$
 CREATE TRIGGER trg_attendance_before_insert
 BEFORE INSERT ON attendance
 FOR EACH ROW
 BEGIN
-    DECLARE v_reg_status VARCHAR(15);
-    DECLARE v_sem_start DATE;
-    DECLARE v_sem_end DATE;
+    DECLARE v_reg_status VARCHAR(20);
 
-    SELECT r.status, sm.start_date, sm.end_date
-    INTO v_reg_status, v_sem_start, v_sem_end
-    FROM registration r
-    JOIN section s ON s.section_id = r.section_id
-    JOIN semester sm ON sm.semester_id = s.semester_id
-    WHERE r.registration_id = NEW.registration_id;
+    -- 1. Check registration status
+    SELECT status INTO v_reg_status
+    FROM registration
+    WHERE registration_id = NEW.registration_id;
 
-    IF v_reg_status = 'Dropped' THEN
+    IF v_reg_status IS NULL THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Attendance Rejected: Cannot mark attendance for a dropped registration.';
+        SET MESSAGE_TEXT = 'Attendance rejected: Registration record not found.';
+    ELSEIF v_reg_status = 'Dropped' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Attendance rejected: Cannot record attendance for a dropped registration.';
     END IF;
 
+    -- 2. Disallow future dates
     IF NEW.attendance_date > CURRENT_DATE() THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Invalid Date: Attendance cannot be recorded for a future date.';
-    END IF;
-
-    IF NEW.attendance_date < v_sem_start OR NEW.attendance_date > v_sem_end THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Invalid Date: Attendance date falls outside the scheduled semester period.';
+        SET MESSAGE_TEXT = 'Attendance rejected: Attendance date cannot be in the future.';
     END IF;
 END$$
 
--- -----------------------------------------------------------------------------
--- 3. PAYMENT OVERPAYMENT PREVENTION TRIGGER
--- -----------------------------------------------------------------------------
+
+-- ------------------------------------------------------------
+-- TRIGGER 3: PAYMENT VALIDATION (BEFORE INSERT)
+-- Rules:
+-- 1. Payment amount must be positive
+-- 2. Payment cannot exceed outstanding bill balance
+-- ------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_payment_before_insert$$
 CREATE TRIGGER trg_payment_before_insert
 BEFORE INSERT ON payment
 FOR EACH ROW
 BEGIN
-    DECLARE v_amount_due DECIMAL(10,2);
-    DECLARE v_total_paid DECIMAL(10,2);
-    DECLARE v_remaining DECIMAL(10,2);
+    DECLARE v_bill_amount DECIMAL(10,2);
+    DECLARE v_already_paid DECIMAL(10,2);
+    DECLARE v_balance DECIMAL(10,2);
 
-    SELECT amount_due INTO v_amount_due
+    IF NEW.amount_paid <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Payment rejected: Payment amount must be greater than zero.';
+    END IF;
+
+    -- Fetch bill details
+    SELECT amount INTO v_bill_amount
     FROM fee_bill
     WHERE bill_id = NEW.bill_id;
 
-    SELECT COALESCE(SUM(amount_paid), 0) INTO v_total_paid
+    IF v_bill_amount IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Payment rejected: Associated fee bill not found.';
+    END IF;
+
+    -- Calculate total already paid
+    SELECT IFNULL(SUM(amount_paid), 0.00) INTO v_already_paid
     FROM payment
     WHERE bill_id = NEW.bill_id;
 
-    SET v_remaining = v_amount_due - v_total_paid;
+    SET v_balance = v_bill_amount - v_already_paid;
 
-    IF NEW.amount_paid > v_remaining THEN
+    IF NEW.amount_paid > v_balance THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Payment Rejected: Total payment cannot exceed the remaining balance due.';
+        SET MESSAGE_TEXT = 'Payment rejected: Payment amount exceeds outstanding balance.';
     END IF;
 END$$
 
--- -----------------------------------------------------------------------------
--- 4. PAYMENT POST-INSERT: SYNCHRONIZE FEE BILL STATUS
--- -----------------------------------------------------------------------------
+
+-- ------------------------------------------------------------
+-- TRIGGER 4: FEE STATUS CALCULATION (AFTER INSERT & DELETE & UPDATE)
+-- Rules:
+-- Automatically re-evaluate and update fee_bill.status based on
+-- sum of payments vs bill amount:
+-- - sum >= amount => 'Paid'
+-- - sum > 0       => 'Partially Paid'
+-- - sum = 0       => 'Unpaid'
+-- ------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_payment_after_insert$$
 CREATE TRIGGER trg_payment_after_insert
 AFTER INSERT ON payment
 FOR EACH ROW
 BEGIN
-    DECLARE v_amount_due DECIMAL(10,2);
+    DECLARE v_bill_amount DECIMAL(10,2);
     DECLARE v_total_paid DECIMAL(10,2);
 
-    SELECT amount_due INTO v_amount_due
+    SELECT amount INTO v_bill_amount
     FROM fee_bill
     WHERE bill_id = NEW.bill_id;
 
-    SELECT COALESCE(SUM(amount_paid), 0) INTO v_total_paid
+    SELECT IFNULL(SUM(amount_paid), 0.00) INTO v_total_paid
     FROM payment
     WHERE bill_id = NEW.bill_id;
 
-    IF v_total_paid >= v_amount_due THEN
+    IF v_total_paid >= v_bill_amount THEN
         UPDATE fee_bill SET status = 'Paid' WHERE bill_id = NEW.bill_id;
     ELSEIF v_total_paid > 0 THEN
         UPDATE fee_bill SET status = 'Partially Paid' WHERE bill_id = NEW.bill_id;
@@ -158,86 +186,147 @@ BEGIN
     END IF;
 END$$
 
--- -----------------------------------------------------------------------------
--- 5. DETERMINISTIC EXAMINATION GRADE TRIGGER (INSERT)
--- -----------------------------------------------------------------------------
-DROP TRIGGER IF EXISTS trg_examination_after_insert$$
-CREATE TRIGGER trg_examination_after_insert
-AFTER INSERT ON examination
+DROP TRIGGER IF EXISTS trg_payment_after_delete$$
+CREATE TRIGGER trg_payment_after_delete
+AFTER DELETE ON payment
 FOR EACH ROW
 BEGIN
-    DECLARE v_pct DECIMAL(5,2);
-    DECLARE v_letter VARCHAR(2);
-    DECLARE v_point DECIMAL(3,1);
+    DECLARE v_bill_amount DECIMAL(10,2);
+    DECLARE v_total_paid DECIMAL(10,2);
 
-    IF NEW.marks IS NOT NULL THEN
-        SET v_pct = (NEW.marks * 100.0) / NEW.max_marks;
+    SELECT amount INTO v_bill_amount
+    FROM fee_bill
+    WHERE bill_id = OLD.bill_id;
 
-        IF v_pct >= 90.0 THEN
-            SET v_letter = 'A+', v_point = 10.0;
-        ELSEIF v_pct >= 80.0 THEN
-            SET v_letter = 'A', v_point = 9.0;
-        ELSEIF v_pct >= 70.0 THEN
-            SET v_letter = 'B+', v_point = 8.0;
-        ELSEIF v_pct >= 60.0 THEN
-            SET v_letter = 'B', v_point = 7.0;
-        ELSEIF v_pct >= 50.0 THEN
-            SET v_letter = 'C', v_point = 6.0;
-        ELSEIF v_pct >= 40.0 THEN
-            SET v_letter = 'D', v_point = 5.0;
-        ELSE
-            SET v_letter = 'F', v_point = 0.0;
-        END IF;
+    SELECT IFNULL(SUM(amount_paid), 0.00) INTO v_total_paid
+    FROM payment
+    WHERE bill_id = OLD.bill_id;
 
-        INSERT INTO grade (exam_id, grade_letter, grade_point, graded_on)
-        VALUES (NEW.exam_id, v_letter, v_point, CURRENT_TIMESTAMP)
-        ON DUPLICATE KEY UPDATE
-            grade_letter = v_letter,
-            grade_point = v_point,
-            graded_on = CURRENT_TIMESTAMP;
+    IF v_total_paid >= v_bill_amount THEN
+        UPDATE fee_bill SET status = 'Paid' WHERE bill_id = OLD.bill_id;
+    ELSEIF v_total_paid > 0 THEN
+        UPDATE fee_bill SET status = 'Partially Paid' WHERE bill_id = OLD.bill_id;
+    ELSE
+        UPDATE fee_bill SET status = 'Unpaid' WHERE bill_id = OLD.bill_id;
     END IF;
 END$$
 
--- -----------------------------------------------------------------------------
--- 6. DETERMINISTIC EXAMINATION GRADE TRIGGER (UPDATE)
--- -----------------------------------------------------------------------------
-DROP TRIGGER IF EXISTS trg_examination_after_update$$
-CREATE TRIGGER trg_examination_after_update
+
+-- ------------------------------------------------------------
+-- TRIGGER 5: AUTOMATIC GRADE GENERATION (AFTER INSERT & AFTER UPDATE)
+-- Rules:
+-- Automatically calculates percentage and computes:
+-- 90+  -> A+ -> 10.0
+-- 80+  -> A  -> 9.0
+-- 70+  -> B+ -> 8.0
+-- 60+  -> B  -> 7.0
+-- 50+  -> C  -> 6.0
+-- 40+  -> D  -> 5.0
+-- <40  -> F  -> 0.0
+-- Writes directly into grade table.
+-- ------------------------------------------------------------
+DROP TRIGGER IF EXISTS trg_exam_after_insert$$
+CREATE TRIGGER trg_exam_after_insert
+AFTER INSERT ON examination
+FOR EACH ROW
+BEGIN
+    DECLARE v_percentage DECIMAL(5,2);
+    DECLARE v_letter VARCHAR(5);
+    DECLARE v_gp DECIMAL(3,1);
+    DECLARE v_rem VARCHAR(50);
+
+    SET v_percentage = (NEW.marks_obtained / NEW.max_marks) * 100.00;
+
+    IF v_percentage >= 90.00 THEN
+        SET v_letter = 'A+';
+        SET v_gp = 10.0;
+        SET v_rem = 'Outstanding';
+    ELSEIF v_percentage >= 80.00 THEN
+        SET v_letter = 'A';
+        SET v_gp = 9.0;
+        SET v_rem = 'Excellent';
+    ELSEIF v_percentage >= 70.00 THEN
+        SET v_letter = 'B+';
+        SET v_gp = 8.0;
+        SET v_rem = 'Very Good';
+    ELSEIF v_percentage >= 60.00 THEN
+        SET v_letter = 'B';
+        SET v_gp = 7.0;
+        SET v_rem = 'Good';
+    ELSEIF v_percentage >= 50.00 THEN
+        SET v_letter = 'C';
+        SET v_gp = 6.0;
+        SET v_rem = 'Average';
+    ELSEIF v_percentage >= 40.00 THEN
+        SET v_letter = 'D';
+        SET v_gp = 5.0;
+        SET v_rem = 'Pass';
+    ELSE
+        SET v_letter = 'F';
+        SET v_gp = 0.0;
+        SET v_rem = 'Fail';
+    END IF;
+
+    INSERT INTO grade (exam_id, percentage, letter_grade, grade_point, remarks)
+    VALUES (NEW.exam_id, v_percentage, v_letter, v_gp, v_rem)
+    ON DUPLICATE KEY UPDATE
+        percentage = v_percentage,
+        letter_grade = v_letter,
+        grade_point = v_gp,
+        remarks = v_rem,
+        calculated_at = CURRENT_TIMESTAMP;
+END$$
+
+DROP TRIGGER IF EXISTS trg_exam_after_update$$
+CREATE TRIGGER trg_exam_after_update
 AFTER UPDATE ON examination
 FOR EACH ROW
 BEGIN
-    DECLARE v_pct DECIMAL(5,2);
-    DECLARE v_letter VARCHAR(2);
-    DECLARE v_point DECIMAL(3,1);
+    DECLARE v_percentage DECIMAL(5,2);
+    DECLARE v_letter VARCHAR(5);
+    DECLARE v_gp DECIMAL(3,1);
+    DECLARE v_rem VARCHAR(50);
 
-    IF NEW.marks IS NOT NULL THEN
-        SET v_pct = (NEW.marks * 100.0) / NEW.max_marks;
+    SET v_percentage = (NEW.marks_obtained / NEW.max_marks) * 100.00;
 
-        IF v_pct >= 90.0 THEN
-            SET v_letter = 'A+', v_point = 10.0;
-        ELSEIF v_pct >= 80.0 THEN
-            SET v_letter = 'A', v_point = 9.0;
-        ELSEIF v_pct >= 70.0 THEN
-            SET v_letter = 'B+', v_point = 8.0;
-        ELSEIF v_pct >= 60.0 THEN
-            SET v_letter = 'B', v_point = 7.0;
-        ELSEIF v_pct >= 50.0 THEN
-            SET v_letter = 'C', v_point = 6.0;
-        ELSEIF v_pct >= 40.0 THEN
-            SET v_letter = 'D', v_point = 5.0;
-        ELSE
-            SET v_letter = 'F', v_point = 0.0;
-        END IF;
-
-        INSERT INTO grade (exam_id, grade_letter, grade_point, graded_on)
-        VALUES (NEW.exam_id, v_letter, v_point, CURRENT_TIMESTAMP)
-        ON DUPLICATE KEY UPDATE
-            grade_letter = v_letter,
-            grade_point = v_point,
-            graded_on = CURRENT_TIMESTAMP;
+    IF v_percentage >= 90.00 THEN
+        SET v_letter = 'A+';
+        SET v_gp = 10.0;
+        SET v_rem = 'Outstanding';
+    ELSEIF v_percentage >= 80.00 THEN
+        SET v_letter = 'A';
+        SET v_gp = 9.0;
+        SET v_rem = 'Excellent';
+    ELSEIF v_percentage >= 70.00 THEN
+        SET v_letter = 'B+';
+        SET v_gp = 8.0;
+        SET v_rem = 'Very Good';
+    ELSEIF v_percentage >= 60.00 THEN
+        SET v_letter = 'B';
+        SET v_gp = 7.0;
+        SET v_rem = 'Good';
+    ELSEIF v_percentage >= 50.00 THEN
+        SET v_letter = 'C';
+        SET v_gp = 6.0;
+        SET v_rem = 'Average';
+    ELSEIF v_percentage >= 40.00 THEN
+        SET v_letter = 'D';
+        SET v_gp = 5.0;
+        SET v_rem = 'Pass';
     ELSE
-        DELETE FROM grade WHERE exam_id = NEW.exam_id;
+        SET v_letter = 'F';
+        SET v_gp = 0.0;
+        SET v_rem = 'Fail';
     END IF;
+
+    INSERT INTO grade (exam_id, percentage, letter_grade, grade_point, remarks)
+    VALUES (NEW.exam_id, v_percentage, v_letter, v_gp, v_rem)
+    ON DUPLICATE KEY UPDATE
+        percentage = v_percentage,
+        letter_grade = v_letter,
+        grade_point = v_gp,
+        remarks = v_rem,
+        calculated_at = CURRENT_TIMESTAMP;
 END$$
 
 DELIMITER ;
